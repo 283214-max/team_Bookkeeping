@@ -1,34 +1,226 @@
-import { env } from "cloudflare:workers";
-import { drizzle } from "drizzle-orm/d1";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import * as schema from "./schema";
+import { createLocalDatabaseClient, createLocalReceiptBucket } from "./local";
+
+export type QueryValue = string | number | boolean | null;
+
+type QueryResult<T> = {
+  results?: T[];
+};
+
+type QueryExecutor = {
+  unsafe: (query: string, parameters?: QueryValue[]) => Promise<Record<string, unknown>[]>;
+};
+
+export type PreparedStatement = {
+  bind: (...values: QueryValue[]) => PreparedStatement;
+  first: <T>() => Promise<T | null>;
+  all: <T>() => Promise<QueryResult<T>>;
+  run: () => Promise<unknown>;
+};
+
+export type DatabaseClient = {
+  prepare: (sql: string) => PreparedStatement;
+  batch: (statements: PreparedStatement[]) => Promise<unknown[]>;
+};
+
+export type R2ObjectLike = {
+  body: BodyInit;
+};
+
+export type R2BucketLike = {
+  put: (
+    key: string,
+    value: ArrayBuffer,
+    options?: {
+      httpMetadata?: { contentType?: string };
+      customMetadata?: Record<string, string>;
+    },
+  ) => Promise<unknown>;
+  get: (key: string) => Promise<R2ObjectLike | null>;
+  delete: (key: string) => Promise<unknown>;
+};
+
+class PostgresStatement implements PreparedStatement {
+  private values: QueryValue[];
+
+  constructor(private readonly rawSql: string, values: QueryValue[] = []) {
+    this.values = values;
+  }
+
+  bind(...values: QueryValue[]) {
+    return new PostgresStatement(this.rawSql, values);
+  }
+
+  async first<T>() {
+    const rows = await this.execute(getQueryClient());
+    return (rows[0] as T | undefined) ?? null;
+  }
+
+  async all<T>() {
+    const rows = await this.execute(getQueryClient());
+    return { results: rows as T[] };
+  }
+
+  async run() {
+    return this.execute(getQueryClient());
+  }
+
+  execute(executor: QueryExecutor) {
+    const { sql, values } = toPostgresQuery(this.rawSql, this.values);
+    return executor.unsafe(sql, values);
+  }
+}
+
+let queryClient: postgres.Sql | null = null;
+let supabaseAdmin: SupabaseClient | null = null;
+let localDatabaseClient: DatabaseClient | null = null;
+
+function getDatabaseUrl() {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is required for Supabase Postgres. Add the Supabase pooled connection string before using the API.",
+    );
+  }
+  return url;
+}
+
+function getQueryClient() {
+  if (!queryClient) {
+    queryClient = postgres(getDatabaseUrl(), {
+      max: 3,
+      prepare: false,
+      ssl: "require",
+    });
+  }
+  return queryClient;
+}
+
+function getSupabaseAdmin() {
+  if (!supabaseAdmin) {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new Error(
+        "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for Supabase Storage.",
+      );
+    }
+
+    supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+  }
+
+  return supabaseAdmin;
+}
+
+function getStorageBucketName() {
+  return process.env.SUPABASE_STORAGE_BUCKET || "receipts";
+}
+
+function shouldUseLocalFallback() {
+  return !process.env.DATABASE_URL && process.env.VERCEL !== "1";
+}
+
+function quoteCamelCaseAliases(sql: string) {
+  return sql.replace(
+    /\bas\s+([A-Za-z_][A-Za-z0-9_]*[A-Z][A-Za-z0-9_]*)\b/g,
+    'as "$1"',
+  );
+}
+
+function toPostgresQuery(sql: string, values: QueryValue[]) {
+  let index = 0;
+  const translatedSql = quoteCamelCaseAliases(sql).replace(/\?/g, () => {
+    index += 1;
+    return `$${index}`;
+  });
+
+  return {
+    sql: translatedSql,
+    values,
+  };
+}
 
 export function getDb() {
-  if (!env.DB) {
-    throw new Error(
-      "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` or let your control plane inject the real binding values before using the database."
-    );
-  }
-
-  return drizzle(env.DB, { schema });
+  return drizzle(getQueryClient(), { schema });
 }
 
-export function getD1() {
-  if (!env.DB) {
-    throw new Error(
-      "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` or restart the dev server after changing the binding."
-    );
+export function getD1(): DatabaseClient {
+  if (shouldUseLocalFallback()) {
+    localDatabaseClient ??= createLocalDatabaseClient();
+    return localDatabaseClient;
   }
 
-  return env.DB;
+  return {
+    prepare(sql: string) {
+      return new PostgresStatement(sql);
+    },
+    async batch(statements: PreparedStatement[]) {
+      const pgStatements = statements as PostgresStatement[];
+      return getQueryClient().begin(async (transaction) => {
+        const results: unknown[] = [];
+        for (const statement of pgStatements) {
+          results.push(await statement.execute(transaction));
+        }
+        return results;
+      });
+    },
+  };
 }
 
-export function getReceiptBucket() {
-  const runtimeEnv = env as typeof env & { RECEIPTS?: R2Bucket };
-  if (!runtimeEnv.RECEIPTS) {
-    throw new Error(
-      "Cloudflare R2 binding `RECEIPTS` is unavailable. Set the `r2` field in .openai/hosting.json to `RECEIPTS` or restart the dev server after changing the binding."
-    );
+export function getReceiptBucket(): R2BucketLike {
+  if ((!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) && process.env.VERCEL !== "1") {
+    return createLocalReceiptBucket();
   }
 
-  return runtimeEnv.RECEIPTS;
+  return {
+    async put(key, value, options) {
+      const { error } = await getSupabaseAdmin()
+        .storage
+        .from(getStorageBucketName())
+        .upload(key, value, {
+          contentType: options?.httpMetadata?.contentType,
+          metadata: options?.customMetadata,
+          upsert: true,
+        });
+
+      if (error) {
+        throw error;
+      }
+    },
+    async get(key) {
+      const { data, error } = await getSupabaseAdmin()
+        .storage
+        .from(getStorageBucketName())
+        .download(key);
+
+      if (error) {
+        const statusCode =
+          "statusCode" in error ? Number(error.statusCode) : undefined;
+        if (statusCode === 404 || error.message.toLowerCase().includes("not found")) {
+          return null;
+        }
+        throw error;
+      }
+
+      return data ? { body: data } : null;
+    },
+    async delete(key) {
+      const { error } = await getSupabaseAdmin()
+        .storage
+        .from(getStorageBucketName())
+        .remove([key]);
+
+      if (error) {
+        throw error;
+      }
+    },
+  };
 }

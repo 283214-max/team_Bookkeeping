@@ -3,11 +3,11 @@ import {
   check,
   index,
   integer,
-  sqliteTable,
+  pgTable,
   text,
-} from "drizzle-orm/sqlite-core";
+} from "drizzle-orm/pg-core";
 
-export const users = sqliteTable(
+export const users = pgTable(
   "users",
   {
     id: text("id").primaryKey(),
@@ -20,8 +20,8 @@ export const users = sqliteTable(
     avatarFileName: text("avatar_file_name"),
     avatarContentType: text("avatar_content_type"),
     avatarSize: integer("avatar_size"),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP::text`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP::text`),
   },
   (table) => [
     index("idx_users_email").on(table.email),
@@ -34,7 +34,7 @@ export const users = sqliteTable(
   ],
 );
 
-export const restaurants = sqliteTable(
+export const restaurants = pgTable(
   "restaurants",
   {
     id: text("id").primaryKey(),
@@ -48,8 +48,8 @@ export const restaurants = sqliteTable(
     createdBy: text("created_by")
       .notNull()
       .references(() => users.id),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP::text`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP::text`),
   },
   (table) => [
     index("idx_restaurants_status_name").on(table.status, table.name),
@@ -64,7 +64,7 @@ export const restaurants = sqliteTable(
   ],
 );
 
-export const restaurantBalances = sqliteTable(
+export const restaurantBalances = pgTable(
   "restaurant_balances",
   {
     restaurantId: text("restaurant_id")
@@ -75,7 +75,7 @@ export const restaurantBalances = sqliteTable(
     totalSpentAmount: integer("total_spent_amount").notNull().default(0),
     version: integer("version").notNull().default(1),
     lastTransactionId: text("last_transaction_id"),
-    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP::text`),
   },
   (table) => [
     check("restaurant_balances_current_amount_check", sql`${table.currentAmount} >= 0`),
@@ -90,7 +90,7 @@ export const restaurantBalances = sqliteTable(
   ],
 );
 
-export const transactions = sqliteTable(
+export const transactions = pgTable(
   "transactions",
   {
     id: text("id").primaryKey(),
@@ -115,7 +115,7 @@ export const transactions = sqliteTable(
     receiptFileName: text("receipt_file_name"),
     receiptContentType: text("receipt_content_type"),
     receiptSize: integer("receipt_size"),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP::text`),
   },
   (table) => [
     index("idx_transactions_restaurant_created").on(
@@ -134,12 +134,12 @@ export const transactions = sqliteTable(
   ],
 );
 
-export const auditLogs = sqliteTable("audit_logs", {
+export const auditLogs = pgTable("audit_logs", {
   id: text("id").primaryKey(),
   actorUserId: text("actor_user_id").references(() => users.id),
   action: text("action").notNull(),
   targetType: text("target_type").notNull(),
   targetId: text("target_id"),
   metadata: text("metadata"),
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP::text`),
 });

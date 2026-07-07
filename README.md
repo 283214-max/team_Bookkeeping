@@ -1,64 +1,15 @@
-# 팀 가계부 프론트엔드
+# Mydata Team Bookkeeping
 
-식당별 예산과 잔액, 사용 내역, 관리자 금액 추가 흐름을 확인할 수 있는 팀 가계부 웹앱 프로토타입입니다. 현재 구현은 vinext/Next Route Handler 기반 backend와 클라이언트 UI가 함께 동작합니다.
+식당별 예산과 잔액, 팀원 사용 내역, 영수증 첨부, 관리자 금액 추가/조정을 관리하는 팀 가계부 웹앱입니다.
 
-## 구현 범위
+## 전환 상태
 
-- 로그인 화면, 회원가입, 관리자/팀원 역할 선택
-- 대시보드 총 잔액, 잔액 부족 식당, 최근 거래
-- 식당 목록 검색과 식당 상세 잔액 조회
-- 사용 내역 등록, 영수증 사진 첨부, 잔액 차감
-- 관리자 금액 추가, 잔액 조정, 식당 추가
-- 거래 내역 필터와 사용자 권한 관리 화면
-- Apple.com을 참고한 얇은 내비게이션, 넓은 여백, 절제된 색상과 명확한 액션 배치
+Vercel 배포를 목표로 `Supabase Postgres + Drizzle + Supabase Storage` 조합으로 전환했습니다.
 
-## Backend 구현 범위
-
-현재 backend는 `app/api` 아래 Route Handler로 구현되어 있으며, 데이터는 Cloudflare D1 바인딩 `DB`에 저장됩니다. 첫 API 요청 시 필요한 테이블을 확인하고 seed 데이터가 없으면 초기 데이터를 넣습니다.
-
-- `POST /api/auth/login`
-- `POST /api/auth/signup`
-- `POST /api/auth/logout`
-- `GET /api/me`
-- `GET /api/dashboard/summary`
-- `GET /api/restaurants`
-- `POST /api/restaurants`
-- `GET /api/restaurants/{id}`
-- `PATCH /api/restaurants/{id}`
-- `DELETE /api/restaurants/{id}`
-- `GET /api/restaurants/{id}/balance`
-- `GET /api/restaurants/{id}/transactions`
-- `POST /api/restaurants/{id}/transactions/spend`
-- `POST /api/restaurants/{id}/transactions/top-up`
-- `POST /api/restaurants/{id}/transactions/adjust`
-- `GET /api/transactions`
-- `POST /api/transactions/{id}/void`
-- `GET /api/users`
-- `PATCH /api/users/{id}/role`
-
-구현된 서버 정책:
-
-- 데모 토큰 기반 인증: `Authorization: Bearer demo:{userId}`
-- 관리자 API 권한 검사
-- 잔액 부족 검증
-- 거래별 `idempotencyKey` 중복 요청 방지
-- 사용, 금액 추가, 잔액 조정, 거래 취소 원장 기록
-- 영수증 이미지 업로드: JPG, PNG, WebP, 최대 5MB
-- 공통 에러 응답 `{ code, message, details }`
-
-## DB 구현 범위
-
-DB 설계는 `team-budget-app-docs.md`의 6단계 DB 문서를 기준으로 구현했습니다. 별도 `db.md` 파일은 현재 워크스페이스에 없어서 통합 문서의 DB 섹션을 기준으로 삼았습니다.
-
-- `.openai/hosting.json`: D1 바인딩 `DB`, R2 바인딩 `RECEIPTS` 활성화
-- `db/schema.ts`: Drizzle SQLite/D1 schema
-- `drizzle/0000_giant_tigra.sql`: 초기 DB migration SQL
-- `drizzle/0001_outstanding_human_torch.sql`: 거래 영수증 메타데이터 migration SQL
-- `lib/team-budget/store.ts`: D1 prepared statement 기반 저장소
-- 테이블: `users`, `restaurants`, `restaurant_balances`, `transactions`, `audit_logs`
-- 제약조건: 역할/상태 enum CHECK, 잔액 음수 방지, 거래 금액 0 방지, idempotency key unique
-- 인덱스: 사용자 이메일, 식당 상태/이름, 거래 식당/사용자/유형별 조회
-- 영수증 파일 원본은 R2 `RECEIPTS`에 저장하고, 거래 원장에는 object key, 파일명, MIME type, 크기만 저장합니다.
+- 1단계 완료: 빌드 체인을 `vinext`에서 Next.js로 전환
+- 2단계 완료: Cloudflare D1 저장소를 Supabase Postgres로 교체
+- 3단계 완료: Cloudflare R2 영수증 저장소를 Supabase Storage로 교체
+- 4단계 완료: 환경변수, 마이그레이션, 배포 가이드를 정리
 
 ## 실행
 
@@ -67,24 +18,87 @@ npm install
 npm run dev
 ```
 
-빌드 검증:
+검증:
 
 ```bash
 npm run lint
 npm run build
 ```
 
+## 환경변수
+
+로컬에서는 `.env.example`을 복사해 `.env`를 만들고 값을 채웁니다. 실제 키는 Git에 커밋하지 않습니다.
+
+```bash
+DATABASE_URL="postgres://..."
+SUPABASE_URL="https://...supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="..."
+SUPABASE_STORAGE_BUCKET="receipts"
+```
+
+Vercel에는 Project Settings > Environment Variables에 같은 값을 등록합니다. `DATABASE_URL`은 Supabase의 pooled connection string 사용을 권장합니다. `SUPABASE_SERVICE_ROLE_KEY`는 서버 전용 키이므로 브라우저에서 접근하는 `NEXT_PUBLIC_` 변수로 만들지 않습니다.
+
+로컬 개발에서 Supabase 환경변수가 아직 없으면 앱은 자동으로 `.data/team-budget-local-db.json` 파일 DB와 `.data/storage` 파일 저장소를 사용합니다. 이 폴더는 Git에 커밋하지 않습니다. Vercel 환경에서는 이 폴백을 사용하지 않으므로 실제 Supabase 환경변수가 반드시 필요합니다.
+
+## Supabase 준비
+
+1. Supabase 프로젝트를 생성합니다.
+2. Project Settings > Database에서 pooled connection string을 복사해 `DATABASE_URL`에 넣습니다.
+3. Storage에서 `receipts` 버킷을 생성합니다.
+4. 영수증 파일은 서버 API를 통해 업로드하므로 버킷은 private 설정을 권장합니다.
+5. SQL Editor 또는 Drizzle migrate로 Postgres 테이블을 생성합니다.
+
+## Drizzle 마이그레이션
+
+스키마는 [db/schema.ts](./db/schema.ts)에 있고, Postgres 마이그레이션 파일은 [drizzle-postgres](./drizzle-postgres)에 있습니다.
+
+새 마이그레이션 생성:
+
+```bash
+npm run db:generate
+```
+
+Supabase Postgres에 적용:
+
+```bash
+npm run db:migrate
+```
+
+DB 확인:
+
+```bash
+npm run db:studio
+```
+
+참고: [drizzle](./drizzle)은 이전 Cloudflare D1/SQLite용 마이그레이션 보관 폴더입니다. 현재 Vercel/Supabase 운영 경로에서는 [drizzle-postgres](./drizzle-postgres)를 사용합니다.
+
+## Vercel 배포 설정
+
+- Framework Preset: Next.js
+- Build Command: `npm run build`
+- Install Command: `npm install`
+- Output Directory: Next.js 기본값 사용
+- Node.js: `package.json`의 `engines.node` 기준으로 22.x 이상 권장
+
+배포 전에 Vercel 환경변수에 `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`을 모두 등록해야 합니다.
+
+## 주요 기능
+
+- 로그인, 회원가입, 관리자 승인 대기
+- 대시보드 잔액 요약
+- 식당 목록 및 식당별 상세 잔액
+- 팀원 사용 내역 등록
+- 영수증 사진 첨부 및 조회
+- 관리자 식당 추가, 삭제, 금액 추가, 잔액 조정
+- 관리자 콘솔의 팀원별 사용금액 합계
+- 팀원의 본인 사용 내역 삭제 요청 처리
+
 ## 주요 파일
 
-- `app/page.tsx`: 프론트 화면과 API 연동 로직
-- `app/globals.css`: 디자인 토큰, 레이아웃, 반응형 스타일
-- `app/layout.tsx`: 한국어 메타데이터와 앱 레이아웃
-- `app/api/`: backend API Route Handler
-- `lib/team-budget/`: backend 타입, 에러, HTTP 유틸, D1 store
-- `db/schema.ts`: Drizzle DB schema
-- `drizzle/`: DB migration SQL과 snapshot
-- `team-budget-app-docs.md`: 요구사항, 기술 설계, 프론트/백엔드/DB 문서
-
-## 다음 연결 지점
-
-운영형으로 확장할 때는 현재 D1 store를 유지하거나, 같은 테이블 구조를 PostgreSQL/Supabase로 옮기면 됩니다. 그 경우 `lib/team-budget/store.ts`의 prepared statement 계층만 교체하고 API와 프론트 계약은 유지할 수 있습니다.
+- [app/page.tsx](./app/page.tsx): 클라이언트 UI와 화면 상태
+- [app/api](./app/api): Next.js Route Handler API
+- [lib/team-budget](./lib/team-budget): 비즈니스 로직, 에러, HTTP 응답, 저장소 로직
+- [db/schema.ts](./db/schema.ts): Drizzle schema
+- [db/index.ts](./db/index.ts): Supabase Postgres와 Supabase Storage 연결
+- [drizzle-postgres](./drizzle-postgres): Supabase Postgres용 Drizzle migration
+- [team-budget-app-docs.md](./team-budget-app-docs.md): 요구사항, 화면, API, DB 설계 문서

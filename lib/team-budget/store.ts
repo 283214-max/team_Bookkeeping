@@ -106,8 +106,8 @@ const schemaStatements = [
     avatar_file_name TEXT,
     avatar_content_type TEXT,
     avatar_size INTEGER CHECK (avatar_size IS NULL OR avatar_size >= 0),
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
   )`,
   `CREATE TABLE IF NOT EXISTS restaurants (
     id TEXT PRIMARY KEY,
@@ -117,8 +117,8 @@ const schemaStatements = [
     memo TEXT,
     low_balance_threshold INTEGER NOT NULL DEFAULT 50000 CHECK (low_balance_threshold >= 0),
     created_by TEXT NOT NULL REFERENCES users(id),
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
   )`,
   `CREATE TABLE IF NOT EXISTS restaurant_balances (
     restaurant_id TEXT PRIMARY KEY REFERENCES restaurants(id),
@@ -127,7 +127,7 @@ const schemaStatements = [
     total_spent_amount INTEGER NOT NULL DEFAULT 0 CHECK (total_spent_amount >= 0),
     version INTEGER NOT NULL DEFAULT 1,
     last_transaction_id TEXT,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
   )`,
   `CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
@@ -146,7 +146,7 @@ const schemaStatements = [
     receipt_file_name TEXT,
     receipt_content_type TEXT,
     receipt_size INTEGER CHECK (receipt_size IS NULL OR receipt_size >= 0),
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
   )`,
   `CREATE TABLE IF NOT EXISTS audit_logs (
     id TEXT PRIMARY KEY,
@@ -155,7 +155,7 @@ const schemaStatements = [
     target_type TEXT NOT NULL,
     target_id TEXT,
     metadata TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
   )`,
   "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
   "CREATE INDEX IF NOT EXISTS idx_restaurants_status_name ON restaurants(status, name)",
@@ -530,7 +530,11 @@ async function ensureDatabase() {
 }
 
 async function ensureUserAvatarColumns() {
-  const columns = await all<{ name: string }>("PRAGMA table_info(users)");
+  const columns = await all<{ name: string }>(
+    `SELECT column_name as name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'users'`,
+  );
   const columnNames = new Set(columns.map((column) => column.name));
   const missingStatements = [
     {
@@ -557,7 +561,11 @@ async function ensureUserAvatarColumns() {
 }
 
 async function ensureReceiptColumns() {
-  const columns = await all<{ name: string }>("PRAGMA table_info(transactions)");
+  const columns = await all<{ name: string }>(
+    `SELECT column_name as name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'transactions'`,
+  );
   const columnNames = new Set(columns.map((column) => column.name));
   const missingStatements = [
     {

@@ -29,6 +29,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -38,6 +39,9 @@ next-env.d.ts
 /dist/
 build/
 /.wrangler/
+/.data/
 
 # local dev logs
 .front-dev.*.log
+.front-next-dev.*.log
+.gh-auth.*.log
