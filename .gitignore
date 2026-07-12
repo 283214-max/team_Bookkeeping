@@ -45,3 +45,4 @@ build/
 .front-dev.*.log
 .front-next-dev.*.log
 .gh-auth.*.log
+.vercel-login.*.log
