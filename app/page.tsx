@@ -154,6 +154,10 @@ function createIdempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function normalizeRestaurantName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 function receiptJpegFileName(fileName: string) {
   const trimmed = fileName.trim() || "receipt";
   const dotIndex = trimmed.lastIndexOf(".");
@@ -592,6 +596,14 @@ export default function Home() {
       setToast({ tone: "danger", message: "0원보다 큰 금액을 입력해 주세요." });
       return;
     }
+    const transactionDate = dateInput || getToday();
+    if (actionMode === "spend" && transactionDate > getToday()) {
+      setToast({
+        tone: "danger",
+        message: "사용일은 오늘 이후 날짜를 선택할 수 없습니다.",
+      });
+      return;
+    }
     if (actionMode === "spend" && isCompressingReceipt) {
       setToast({ tone: "warning", message: "영수증 사진 압축 중입니다." });
       return;
@@ -618,13 +630,13 @@ export default function Home() {
             }
           : {
               amount,
-              usedAt: dateInput || getToday(),
+              usedAt: transactionDate,
               idempotencyKey: createIdempotencyKey(actionMode),
             };
 
     if (body instanceof FormData) {
       body.append("amount", String(amount));
-      body.append("usedAt", dateInput || getToday());
+      body.append("usedAt", transactionDate);
       body.append("idempotencyKey", createIdempotencyKey("spend"));
       if (receiptFile) {
         body.append("receipt", receiptFile);
@@ -683,6 +695,19 @@ export default function Home() {
     const initialAmount = Number(newRestaurantAmount.replace(/[^\d]/g, ""));
     if (!trimmedName) {
       setToast({ tone: "danger", message: "식당명을 입력해 주세요." });
+      return;
+    }
+    if (
+      activeRestaurants.some(
+        (restaurant) =>
+          normalizeRestaurantName(restaurant.name) ===
+          normalizeRestaurantName(trimmedName),
+      )
+    ) {
+      setToast({
+        tone: "danger",
+        message: "이미 동일한 식당명이 있습니다.",
+      });
       return;
     }
     if (!Number.isFinite(initialAmount) || initialAmount < 0) {
@@ -1398,8 +1423,31 @@ function RestaurantsView({
     actionMode === "spend"
       ? "사용 내역 등록"
       : actionMode === "topup"
-        ? "관리자 금액 추가"
+        ? "추가결재 금액 반영"
         : "관리자 잔액 조정";
+  const parsedAmount = Number(amountInput.replace(/[^\d]/g, ""));
+  const safeAmount = Number.isFinite(parsedAmount) ? parsedAmount : 0;
+  const previewDelta =
+    actionMode === "adjust"
+      ? adjustDirection === "increase"
+        ? safeAmount
+        : -safeAmount
+      : actionMode === "spend"
+        ? -safeAmount
+        : safeAmount;
+  const previewBalance = selectedBalance.currentAmount + previewDelta;
+  const amountLabel =
+    actionMode === "topup"
+      ? "추가결재 금액"
+      : actionMode === "adjust"
+        ? "조정 금액"
+        : "사용 금액";
+  const actionDescription =
+    actionMode === "topup"
+      ? `${selectedRestaurant.name} 잔액에 입력한 금액이 추가됩니다.`
+      : actionMode === "adjust"
+        ? "관리자 조정은 잔액을 직접 늘리거나 줄일 때 사용합니다."
+        : "팀원이 사용한 금액과 영수증 사진을 등록합니다.";
 
   return (
     <div className="view-stack">
@@ -1502,6 +1550,7 @@ function RestaurantsView({
               )}
             </div>
           </div>
+          <p className="action-description">{actionDescription}</p>
 
           <form className="action-form" onSubmit={onSubmitTransaction}>
             {actionMode === "adjust" && (
@@ -1523,7 +1572,7 @@ function RestaurantsView({
               </div>
             )}
             <label>
-              금액
+              {amountLabel}
               <input
                 inputMode="numeric"
                 placeholder="예: 25,000"
@@ -1531,14 +1580,17 @@ function RestaurantsView({
                 onChange={(event) => onAmountInputChange(event.target.value)}
               />
             </label>
-            <label>
-              사용일
-              <input
-                type="date"
-                value={dateInput}
-                onChange={(event) => onDateInputChange(event.target.value)}
-              />
-            </label>
+            {actionMode === "spend" && (
+              <label>
+                사용일
+                <input
+                  max={getToday()}
+                  type="date"
+                  value={dateInput}
+                  onChange={(event) => onDateInputChange(event.target.value)}
+                />
+              </label>
+            )}
             {actionMode === "spend" && (
               <div className="receipt-field">
                 <label>
@@ -1570,11 +1622,12 @@ function RestaurantsView({
               </div>
             )}
             <div className="balance-preview">
-              <span>변경 전</span>
-              <b>{formatMoney(selectedBalance.currentAmount)}</b>
+              <span>반영 후 예상 잔액</span>
+              <b>{formatMoney(previewBalance)}</b>
+              {safeAmount > 0 && <small>{formatDelta(previewDelta)} 반영</small>}
             </div>
             <button className="primary-button" disabled={isSubmitting} type="submit">
-              저장
+              {actionMode === "topup" ? "추가결재 반영" : "저장"}
             </button>
           </form>
         </div>

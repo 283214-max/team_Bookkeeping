@@ -828,6 +828,12 @@ td small {
   margin-top: 0;
 }
 
+.action-description {
+  margin: -8px 0 18px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .receipt-field {
   display: grid;
   gap: 10px;
@@ -906,9 +912,10 @@ td small {
 }
 
 .balance-preview {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
+  gap: 4px 14px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-compact);
   background: var(--canvas);
@@ -919,6 +926,17 @@ td small {
   color: var(--muted);
   font-size: 14px;
   font-weight: 600;
+}
+
+.balance-preview b,
+.balance-preview small {
+  text-align: right;
+}
+
+.balance-preview small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .inline-form {

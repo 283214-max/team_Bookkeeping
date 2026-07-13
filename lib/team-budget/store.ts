@@ -511,6 +511,10 @@ function bindValues(values: SqlValue[]) {
   return values;
 }
 
+function normalizeRestaurantName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 async function first<T>(sql: string, values: SqlValue[] = []) {
   const db = getD1();
   return db
@@ -1434,6 +1438,19 @@ export async function createRestaurant(
   if (!Number.isInteger(initialAmount) || initialAmount < 0) {
     throw validationError("초기 금액은 0 이상의 정수여야 합니다.", {
       field: "initialAmount",
+    });
+  }
+  const existingRestaurants = await all<{ id: string; name: string }>(
+    "SELECT id, name FROM restaurants WHERE status = 'ACTIVE'",
+  );
+  if (
+    existingRestaurants.some(
+      (restaurant) =>
+        normalizeRestaurantName(restaurant.name) === normalizeRestaurantName(name),
+    )
+  ) {
+    throw conflict("RESTAURANT_NAME_CONFLICT", "이미 동일한 식당명이 있습니다.", {
+      field: "name",
     });
   }
 
