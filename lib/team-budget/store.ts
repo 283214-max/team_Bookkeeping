@@ -1176,9 +1176,6 @@ export async function loginUser(input: { email?: string; name?: string }) {
   if (!row || row.status !== "ACTIVE") {
     throw unauthorized("로그인할 수 있는 사용자를 찾을 수 없습니다.");
   }
-  if (row.name.trim() !== name) {
-    throw unauthorized("계정 이메일과 이름이 일치하지 않습니다.");
-  }
 
   const user = toUser(row);
   return {
