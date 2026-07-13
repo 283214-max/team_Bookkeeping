@@ -946,6 +946,11 @@ td small {
   align-items: end;
 }
 
+.settings-form {
+  grid-template-columns: minmax(220px, 420px) auto;
+  justify-content: start;
+}
+
 .table-wrap {
   overflow-x: auto;
 }

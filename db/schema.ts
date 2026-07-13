@@ -143,3 +143,10 @@ export const auditLogs = pgTable("audit_logs", {
   metadata: text("metadata"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP::text`),
 });
+
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedBy: text("updated_by").references(() => users.id),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP::text`),
+});

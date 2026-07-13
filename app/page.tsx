@@ -39,6 +39,10 @@ type ListResponse<T> = {
   total: number;
 };
 
+type SignupApprovalCodeResponse = {
+  approvalCode: string;
+};
+
 type SavedSession = {
   accessToken: string;
   activeView: View;
@@ -255,6 +259,7 @@ export default function Home() {
   const [loginName, setLoginName] = useState("");
   const [signupName, setSignupName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
+  const [signupApprovalCode, setSignupApprovalCode] = useState("");
   const [signupAvatarFile, setSignupAvatarFile] = useState<File | null>(null);
   const [signupAvatarPreviewUrl, setSignupAvatarPreviewUrl] = useState("");
   const [signupAvatarPreset, setSignupAvatarPreset] =
@@ -293,6 +298,7 @@ export default function Home() {
   const [toast, setToast] = useState<Toast>(null);
   const [newRestaurantName, setNewRestaurantName] = useState("");
   const [newRestaurantAmount, setNewRestaurantAmount] = useState("");
+  const [adminApprovalCode, setAdminApprovalCode] = useState("");
 
   const isAdmin = currentUser.role === "ADMIN";
   const selectedSignupAvatar =
@@ -361,10 +367,7 @@ export default function Home() {
   const filteredRestaurants = activeRestaurants.filter((restaurant) => {
     const query = restaurantQuery.trim().toLowerCase();
     if (!query) return true;
-    return (
-      restaurant.name.toLowerCase().includes(query) ||
-      restaurant.category.toLowerCase().includes(query)
-    );
+    return restaurant.name.toLowerCase().includes(query);
   });
 
   const filteredTransactions = transactions.filter((transaction) => {
@@ -392,6 +395,7 @@ export default function Home() {
           !reversedTransactionIds.has(transaction.id),
       )
     : [];
+  const effectiveActionMode: ActionMode = isAdmin ? actionMode : "spend";
 
   async function apiFetch<T>(
     path: string,
@@ -420,12 +424,19 @@ export default function Home() {
   }
 
   async function loadAppData(token: string, user: User) {
-    const [summary, transactionResponse, usersResponse] = await Promise.all([
+    const [summary, transactionResponse, usersResponse, approvalCodeResponse] = await Promise.all([
       apiFetch<DashboardSummary>("/dashboard/summary", {}, token),
       apiFetch<ListResponse<LedgerTransaction>>("/transactions", {}, token),
       user.role === "ADMIN"
         ? apiFetch<ListResponse<User>>("/users", {}, token)
         : Promise.resolve({ items: [user], total: 1 }),
+      user.role === "ADMIN"
+        ? apiFetch<SignupApprovalCodeResponse>(
+            "/settings/signup-approval-code",
+            {},
+            token,
+          )
+        : Promise.resolve({ approvalCode: "" }),
     ]);
     const next = splitRestaurantItems(summary.restaurants);
 
@@ -433,6 +444,7 @@ export default function Home() {
     setBalances(next.balances);
     setTransactions(transactionResponse.items);
     setUsers(usersResponse.items);
+    setAdminApprovalCode(approvalCodeResponse.approvalCode);
     setSelectedRestaurantId((current) => {
       if (current && next.restaurants.some((item) => item.id === current)) {
         return current;
@@ -554,6 +566,7 @@ export default function Home() {
       const body = new FormData();
       body.append("name", signupName);
       body.append("email", signupEmail);
+      body.append("approvalCode", signupApprovalCode);
       body.append("avatarPreset", signupAvatarPreset);
       if (signupAvatarFile) {
         body.append("avatar", signupAvatarFile);
@@ -570,6 +583,7 @@ export default function Home() {
       await completeAuthentication(result);
       setSignupName("");
       setSignupEmail("");
+      setSignupApprovalCode("");
       handleSignupAvatarChange(null);
       setSignupAvatarPreset("dragon");
       setToast({
@@ -597,33 +611,34 @@ export default function Home() {
       return;
     }
     const transactionDate = dateInput || getToday();
-    if (actionMode === "spend" && transactionDate > getToday()) {
+    const transactionActionMode = isAdmin ? actionMode : "spend";
+    if (transactionActionMode === "spend" && transactionDate > getToday()) {
       setToast({
         tone: "danger",
         message: "사용일은 오늘 이후 날짜를 선택할 수 없습니다.",
       });
       return;
     }
-    if (actionMode === "spend" && isCompressingReceipt) {
+    if (transactionActionMode === "spend" && isCompressingReceipt) {
       setToast({ tone: "warning", message: "영수증 사진 압축 중입니다." });
       return;
     }
-    if (actionMode === "spend" && !receiptFile) {
+    if (transactionActionMode === "spend" && !receiptFile) {
       window.alert("영수증 사진을 첨부해주세요.");
       return;
     }
 
     const endpoint =
-      actionMode === "spend"
+      transactionActionMode === "spend"
         ? `/restaurants/${selectedRestaurant.id}/transactions/spend`
-        : actionMode === "topup"
+        : transactionActionMode === "topup"
           ? `/restaurants/${selectedRestaurant.id}/transactions/top-up`
           : `/restaurants/${selectedRestaurant.id}/transactions/adjust`;
     const amountDelta = adjustDirection === "increase" ? amount : -amount;
     const body =
-      actionMode === "spend"
+      transactionActionMode === "spend"
         ? new FormData()
-        : actionMode === "adjust"
+        : transactionActionMode === "adjust"
           ? {
               amountDelta,
               idempotencyKey: createIdempotencyKey("adjust"),
@@ -631,7 +646,7 @@ export default function Home() {
           : {
               amount,
               usedAt: transactionDate,
-              idempotencyKey: createIdempotencyKey(actionMode),
+              idempotencyKey: createIdempotencyKey(transactionActionMode),
             };
 
     if (body instanceof FormData) {
@@ -853,6 +868,37 @@ export default function Home() {
     }
   }
 
+  async function updateSignupApprovalCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!isAdmin) return;
+
+    setIsLoading(true);
+    try {
+      const result = await apiFetch<SignupApprovalCodeResponse>(
+        "/settings/signup-approval-code",
+        {
+          method: "PUT",
+          body: JSON.stringify({ approvalCode: adminApprovalCode }),
+        },
+      );
+      setAdminApprovalCode(result.approvalCode);
+      setToast({
+        tone: "success",
+        message: "회원가입 승인번호를 변경했습니다.",
+      });
+    } catch (error) {
+      setToast({
+        tone: "danger",
+        message:
+          error instanceof Error
+            ? error.message
+            : "회원가입 승인번호 변경에 실패했습니다.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   async function deleteUser(user: User) {
     if (user.id === currentUser.id) {
       setToast({ tone: "danger", message: "본인 계정은 삭제할 수 없습니다." });
@@ -1010,6 +1056,15 @@ export default function Home() {
                   onChange={(event) => setSignupEmail(event.target.value)}
                 />
               </label>
+              <label>
+                승인번호
+                <input
+                  autoComplete="off"
+                  placeholder="관리자에게 받은 승인번호"
+                  value={signupApprovalCode}
+                  onChange={(event) => setSignupApprovalCode(event.target.value)}
+                />
+              </label>
               <div className="signup-avatar-field">
                 <span>프로필 사진</span>
                 <div className="signup-avatar-control">
@@ -1147,7 +1202,7 @@ export default function Home() {
 
         {activeView === "restaurants" && selectedRestaurant && selectedBalance && (
           <RestaurantsView
-            actionMode={actionMode}
+            actionMode={effectiveActionMode}
             adjustDirection={adjustDirection}
             amountInput={amountInput}
             balanceByRestaurant={balanceByRestaurant}
@@ -1200,8 +1255,12 @@ export default function Home() {
           <AdminView
             balances={balances}
             currentUser={currentUser}
+            approvalCode={adminApprovalCode}
+            isSubmitting={isLoading}
             restaurants={restaurants}
             transactions={transactions}
+            onApprovalCodeChange={setAdminApprovalCode}
+            onApprovalCodeSubmit={updateSignupApprovalCode}
             onDeleteUser={deleteUser}
             users={users}
             onRoleChange={updateUserRole}
@@ -1318,7 +1377,6 @@ function DashboardView({
                 >
                   <span>
                     <strong>{restaurant.name}</strong>
-                    <small>{restaurant.category}</small>
                   </span>
                   <span className="balance-meter" aria-hidden="true">
                     <i style={{ width: `${ratio}%` }} />
@@ -1476,7 +1534,7 @@ function RestaurantsView({
             className="search-input"
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="식당명 또는 카테고리 검색"
+            placeholder="식당명 검색"
           />
           <div className="restaurant-list">
             {filteredRestaurants.map((restaurant) => {
@@ -1494,7 +1552,6 @@ function RestaurantsView({
                   >
                     <span>
                       <strong>{restaurant.name}</strong>
-                      <small>{restaurant.category}</small>
                     </span>
                     <span>
                       <b>{balance ? formatMoney(balance.currentAmount) : "-"}</b>
@@ -1739,16 +1796,24 @@ function TransactionsView({
 }
 
 function AdminView({
+  approvalCode,
   balances,
   currentUser,
+  isSubmitting,
+  onApprovalCodeChange,
+  onApprovalCodeSubmit,
   onDeleteUser,
   onRoleChange,
   restaurants,
   transactions,
   users,
 }: {
+  approvalCode: string;
   balances: Balance[];
   currentUser: User;
+  isSubmitting: boolean;
+  onApprovalCodeChange: (value: string) => void;
+  onApprovalCodeSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onDeleteUser: (user: User) => void;
   onRoleChange: (userId: string, role: Role) => void;
   restaurants: Restaurant[];
@@ -1810,6 +1875,32 @@ function AdminView({
           <strong>{users.length}명</strong>
           <small>활성 계정</small>
         </article>
+      </section>
+      <section className="surface-block">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Signup</p>
+            <h2>회원가입 승인번호</h2>
+          </div>
+        </div>
+        <form className="inline-form settings-form" onSubmit={onApprovalCodeSubmit}>
+          <label>
+            최신 승인번호
+            <input
+              autoComplete="off"
+              minLength={4}
+              maxLength={40}
+              value={approvalCode}
+              onChange={(event) => onApprovalCodeChange(event.target.value)}
+            />
+          </label>
+          <button disabled={isSubmitting} type="submit">
+            승인번호 저장
+          </button>
+        </form>
+        <p className="auth-help">
+          새로 가입하는 사람은 저장된 최신 승인번호를 입력해야 가입할 수 있습니다.
+        </p>
       </section>
       <section className="surface-block">
         <div className="section-heading">

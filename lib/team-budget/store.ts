@@ -96,6 +96,16 @@ type TransactionInput = {
   receipt?: ReceiptUpload | null;
 };
 
+type AppSettingRow = {
+  key: string;
+  value: string;
+  updatedBy: string | null;
+  updatedAt: string;
+};
+
+const SIGNUP_APPROVAL_CODE_KEY = "signup_approval_code";
+const DEFAULT_SIGNUP_APPROVAL_CODE = "MYDATA2026";
+
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -159,6 +169,12 @@ const schemaStatements = [
     target_id TEXT,
     metadata TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_by TEXT REFERENCES users(id),
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
   )`,
   "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
   "CREATE INDEX IF NOT EXISTS idx_restaurants_status_name ON restaurants(status, name)",
@@ -567,6 +583,7 @@ async function initializeDatabase() {
   await db.batch(schemaStatements.map((statement) => db.prepare(statement)));
   await ensureUserAvatarColumns();
   await ensureReceiptColumns();
+  await ensureDefaultAppSettings();
 
   const userCount = await first<{ count: number }>(
     "SELECT COUNT(*) as count FROM users",
@@ -576,6 +593,21 @@ async function initializeDatabase() {
   }
 
   await seedDatabase();
+}
+
+async function ensureDefaultAppSettings() {
+  const approvalCode = await first<{ key: string }>(
+    "SELECT key FROM app_settings WHERE key = ?",
+    [SIGNUP_APPROVAL_CODE_KEY],
+  );
+  if (approvalCode) {
+    return;
+  }
+
+  await run(
+    "INSERT INTO app_settings (key, value, updated_by, updated_at) VALUES (?, ?, NULL, ?)",
+    [SIGNUP_APPROVAL_CODE_KEY, DEFAULT_SIGNUP_APPROVAL_CODE, nowText()],
+  );
 }
 
 async function ensureUserAvatarColumns() {
@@ -1205,6 +1237,7 @@ export async function loginUser(input: { email?: string; name?: string }) {
 export async function signupUser(input: {
   name?: string;
   email?: string;
+  approvalCode?: string | null;
   avatar?: AvatarUpload | null;
   avatarPreset?: string | null;
 }) {
@@ -1212,12 +1245,21 @@ export async function signupUser(input: {
 
   const name = input.name?.trim();
   const email = input.email?.trim().toLowerCase();
+  const approvalCode = input.approvalCode?.trim();
 
   if (!name) {
     throw validationError("이름을 입력해 주세요.", { field: "name" });
   }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw validationError("올바른 이메일을 입력해 주세요.", { field: "email" });
+  }
+  if (!approvalCode) {
+    throw validationError("승인번호를 입력해 주세요.", { field: "approvalCode" });
+  }
+
+  const currentApprovalCode = await readSignupApprovalCode();
+  if (approvalCode !== currentApprovalCode) {
+    throw forbidden("승인번호가 올바르지 않습니다.");
   }
 
   const existing = await first<{ id: string }>(
@@ -1309,6 +1351,56 @@ export async function signupUser(input: {
     accessToken: `demo:${user.id}`,
     user,
   };
+}
+
+async function readSignupApprovalCode() {
+  await ensureDatabase();
+  const row = await first<AppSettingRow>(
+    `SELECT
+      key,
+      value,
+      updated_by as updatedBy,
+      updated_at as updatedAt
+    FROM app_settings
+    WHERE key = ?`,
+    [SIGNUP_APPROVAL_CODE_KEY],
+  );
+  return row?.value ?? DEFAULT_SIGNUP_APPROVAL_CODE;
+}
+
+export async function getSignupApprovalCode(requestUser: User) {
+  ensureAdmin(requestUser);
+  return { approvalCode: await readSignupApprovalCode() };
+}
+
+export async function updateSignupApprovalCode(
+  requestUser: User,
+  input: { approvalCode?: string | null },
+) {
+  ensureAdmin(requestUser);
+  await ensureDatabase();
+
+  const approvalCode = input.approvalCode?.trim();
+  if (!approvalCode || approvalCode.length < 4 || approvalCode.length > 40) {
+    throw validationError("승인번호는 4자 이상 40자 이하로 입력해 주세요.", {
+      field: "approvalCode",
+    });
+  }
+
+  const now = nowText();
+  await run(
+    "UPDATE app_settings SET value = ?, updated_by = ?, updated_at = ? WHERE key = ?",
+    [approvalCode, requestUser.id, now, SIGNUP_APPROVAL_CODE_KEY],
+  );
+  await addAuditLog({
+    actorUserId: requestUser.id,
+    action: "SIGNUP_APPROVAL_CODE_UPDATE",
+    targetType: "app_settings",
+    targetId: SIGNUP_APPROVAL_CODE_KEY,
+    metadata: { updatedAt: now },
+  });
+
+  return { approvalCode };
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {

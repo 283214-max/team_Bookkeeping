@@ -24,6 +24,7 @@ export async function POST(request: Request) {
       const result = await signupUser({
         name: String(form.get("name") ?? ""),
         email: String(form.get("email") ?? ""),
+        approvalCode: String(form.get("approvalCode") ?? ""),
         avatar: avatar instanceof File ? await fileToAvatarUpload(avatar) : null,
         avatarPreset: String(form.get("avatarPreset") ?? ""),
       });
@@ -34,11 +35,13 @@ export async function POST(request: Request) {
     const body = await readJson<{
       name?: string;
       email?: string;
+      approvalCode?: string | null;
       avatarPreset?: string | null;
     }>(request);
     const result = await signupUser({
       name: body.name,
       email: body.email,
+      approvalCode: body.approvalCode,
       avatarPreset: body.avatarPreset,
     });
 

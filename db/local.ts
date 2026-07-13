@@ -19,7 +19,8 @@ type TableName =
   | "restaurants"
   | "restaurant_balances"
   | "transactions"
-  | "audit_logs";
+  | "audit_logs"
+  | "app_settings";
 
 type LocalData = {
   version: 1;
@@ -90,6 +91,7 @@ const tableColumns: Record<TableName, string[]> = {
     "metadata",
     "created_at",
   ],
+  app_settings: ["key", "value", "updated_by", "updated_at"],
 };
 
 const dataDir = resolve(process.cwd(), ".data");
@@ -177,6 +179,7 @@ function createEmptyData(): LocalData {
       restaurant_balances: [],
       transactions: [],
       audit_logs: [],
+      app_settings: [],
     },
   };
 }
@@ -194,6 +197,9 @@ function getLocalData() {
   }
 
   localData = JSON.parse(readFileSync(databasePath, "utf8")) as LocalData;
+  for (const tableName of Object.keys(tableColumns) as TableName[]) {
+    localData.tables[tableName] ??= [];
+  }
   return localData;
 }
 
@@ -355,6 +361,16 @@ function executeUpdate(sql: string, values: QueryValue[]) {
     return;
   }
 
+  if (sql.startsWith("update app_settings set value")) {
+    const [value, updatedBy, updatedAt, key] = values;
+    updateByKey("app_settings", key, {
+      value,
+      updated_by: updatedBy,
+      updated_at: updatedAt,
+    });
+    return;
+  }
+
   throw new Error(`Unsupported local UPDATE: ${sql}`);
 }
 
@@ -374,6 +390,10 @@ function executeSelect(sql: string, values: QueryValue[]) {
 
   if (sql.includes("from users")) {
     return selectUsers(sql, values);
+  }
+
+  if (sql.includes("from app_settings")) {
+    return selectAppSettings(sql, values);
   }
 
   if (sql.includes("from restaurants")) {
@@ -413,6 +433,19 @@ function selectUsers(sql: string, values: QueryValue[]) {
     return rows.map((row) => ({ id: row.id }));
   }
   return rows.map(toUserResult);
+}
+
+function selectAppSettings(sql: string, values: QueryValue[]) {
+  let rows = [...getLocalData().tables.app_settings];
+  if (sql.includes("where key = ?")) {
+    rows = rows.filter((row) => row.key === values[0]);
+  }
+  return rows.map((row) => ({
+    key: row.key,
+    value: row.value,
+    updatedBy: row.updated_by,
+    updatedAt: row.updated_at,
+  }));
 }
 
 function selectRestaurants(sql: string, values: QueryValue[]) {
@@ -531,6 +564,14 @@ function applyLimit(sql: string, rows: LocalRow[]) {
 
 function updateById(table: TableName, id: QueryValue | undefined, patch: LocalRow) {
   const row = getLocalData().tables[table].find((item) => item.id === id);
+  if (row) {
+    Object.assign(row, patch);
+    saveLocalData();
+  }
+}
+
+function updateByKey(table: TableName, key: QueryValue | undefined, patch: LocalRow) {
+  const row = getLocalData().tables[table].find((item) => item.key === key);
   if (row) {
     Object.assign(row, patch);
     saveLocalData();
