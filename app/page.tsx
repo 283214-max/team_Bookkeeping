@@ -493,7 +493,21 @@ export default function Home() {
         `/restaurants/${restaurant.id}`,
         { method: "DELETE" },
       );
-      await loadAppData(accessToken, currentUser);
+      setRestaurants((items) =>
+        items.filter((item) => item.id !== restaurant.id),
+      );
+      setBalances((items) =>
+        items.filter((item) => item.restaurantId !== restaurant.id),
+      );
+      setSelectedRestaurantId((current) => {
+        if (current !== restaurant.id) {
+          return current;
+        }
+
+        return restaurants.find(
+          (item) => item.id !== restaurant.id && item.status === "ACTIVE",
+        )?.id ?? "";
+      });
       setToast({
         tone: "success",
         message: `${restaurant.name} 식당을 목록에서 삭제했습니다.`,

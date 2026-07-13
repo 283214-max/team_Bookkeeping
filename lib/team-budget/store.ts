@@ -166,6 +166,8 @@ const schemaStatements = [
 
 const DEFAULT_AVATAR_URL = "/default-avatar.svg";
 
+let ensureDatabasePromise: Promise<void> | null = null;
+
 const seedUsers: User[] = [
   {
     id: "u-admin",
@@ -514,6 +516,19 @@ async function batch(statements: { sql: string; values?: SqlValue[] }[]) {
 }
 
 async function ensureDatabase() {
+  if (ensureDatabasePromise) {
+    return ensureDatabasePromise;
+  }
+
+  ensureDatabasePromise = initializeDatabase().catch((error) => {
+    ensureDatabasePromise = null;
+    throw error;
+  });
+
+  return ensureDatabasePromise;
+}
+
+async function initializeDatabase() {
   const db = getD1();
   await db.batch(schemaStatements.map((statement) => db.prepare(statement)));
   await ensureUserAvatarColumns();
@@ -1453,9 +1468,11 @@ export async function updateRestaurant(
 
 export async function deleteRestaurant(requestUser: User, id: string) {
   ensureAdmin(requestUser);
-  const current = toRestaurant(await getRestaurantRowOrThrow(id));
+  const currentRow = await getRestaurantRowOrThrow(id);
+  const current = toRestaurant(currentRow);
+  const balance = toBalance(await getBalanceRowOrThrow(id));
   if (current.status === "INACTIVE") {
-    return { restaurant: await restaurantWithBalance(await getRestaurantRowOrThrow(id)) };
+    return { restaurant: { ...current, balance } };
   }
 
   const updatedAt = nowText();
@@ -1464,7 +1481,11 @@ export async function deleteRestaurant(requestUser: User, id: string) {
     id,
   ]);
 
-  const after = toRestaurant(await getRestaurantRowOrThrow(id));
+  const after = {
+    ...current,
+    status: "INACTIVE" as RestaurantStatus,
+    updatedAt,
+  };
   await addAuditLog({
     actorUserId: requestUser.id,
     action: "RESTAURANT_DELETE",
@@ -1473,7 +1494,7 @@ export async function deleteRestaurant(requestUser: User, id: string) {
     metadata: { before: current, after },
   });
 
-  return { restaurant: await restaurantWithBalance(await getRestaurantRowOrThrow(id)) };
+  return { restaurant: { ...after, balance } };
 }
 
 export async function listRestaurantTransactions(restaurantId: string) {
