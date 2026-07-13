@@ -133,6 +133,41 @@ function getStorageBucketName() {
   return process.env.SUPABASE_STORAGE_BUCKET || "receipts";
 }
 
+function getStorageErrorStatus(error: unknown) {
+  if (typeof error === "object" && error && "statusCode" in error) {
+    return Number((error as { statusCode?: string | number }).statusCode);
+  }
+  return undefined;
+}
+
+function getStorageErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message.toLowerCase() : "";
+}
+
+function isMissingStorageBucketError(error: unknown) {
+  const message = getStorageErrorMessage(error);
+  return (
+    getStorageErrorStatus(error) === 404 ||
+    message.includes("bucket not found") ||
+    message.includes("bucket_not_found")
+  );
+}
+
+function isExistingStorageBucketError(error: unknown) {
+  const message = getStorageErrorMessage(error);
+  return message.includes("already exists") || message.includes("already_exist");
+}
+
+async function ensureStorageBucket(bucketName: string) {
+  const { error } = await getSupabaseAdmin().storage.createBucket(bucketName, {
+    public: false,
+  });
+
+  if (error && !isExistingStorageBucketError(error)) {
+    throw error;
+  }
+}
+
 function shouldUseLocalFallback() {
   return !getConfiguredDatabaseUrl() && process.env.VERCEL !== "1";
 }
@@ -191,14 +226,22 @@ export function getReceiptBucket(): R2BucketLike {
 
   return {
     async put(key, value, options) {
-      const { error } = await getSupabaseAdmin()
-        .storage
-        .from(getStorageBucketName())
-        .upload(key, value, {
-          contentType: options?.httpMetadata?.contentType,
-          metadata: options?.customMetadata,
-          upsert: true,
-        });
+      const bucketName = getStorageBucketName();
+      const upload = () =>
+        getSupabaseAdmin()
+          .storage
+          .from(bucketName)
+          .upload(key, value, {
+            contentType: options?.httpMetadata?.contentType,
+            metadata: options?.customMetadata,
+            upsert: true,
+          });
+
+      let { error } = await upload();
+      if (error && isMissingStorageBucketError(error)) {
+        await ensureStorageBucket(bucketName);
+        ({ error } = await upload());
+      }
 
       if (error) {
         throw error;

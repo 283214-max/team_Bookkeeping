@@ -190,7 +190,7 @@ const seedUsers: User[] = [
   {
     id: "u-admin",
     name: "김민지",
-    email: "admin@team.local",
+    email: "admin@nonghyup.com",
     role: "ADMIN",
     status: "ACTIVE",
     avatarUrl: DEFAULT_AVATAR_URL,
@@ -198,7 +198,7 @@ const seedUsers: User[] = [
   {
     id: "u-member",
     name: "이준호",
-    email: "member@team.local",
+    email: "member@nonghyup.com",
     role: "MEMBER",
     status: "ACTIVE",
     avatarUrl: DEFAULT_AVATAR_URL,
@@ -206,7 +206,7 @@ const seedUsers: User[] = [
   {
     id: "u-member-2",
     name: "박서연",
-    email: "seoyeon@team.local",
+    email: "seoyeon@nonghyup.com",
     role: "MEMBER",
     status: "ACTIVE",
     avatarUrl: DEFAULT_AVATAR_URL,
@@ -1175,6 +1175,10 @@ export async function loginUser(input: { email?: string; name?: string }) {
 
   if (!row || row.status !== "ACTIVE") {
     throw unauthorized("로그인할 수 있는 사용자를 찾을 수 없습니다.");
+  }
+
+  if (row.name.trim() !== name) {
+    throw unauthorized("계정 이메일과 이름이 일치하지 않습니다.");
   }
 
   const user = toUser(row);

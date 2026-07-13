@@ -2,17 +2,26 @@
 
 :root {
   --background: #f5f5f7;
+  --canvas: #ffffff;
   --surface: #ffffff;
-  --surface-quiet: #fbfbfd;
+  --surface-quiet: #f5f5f7;
+  --surface-dark: #272729;
+  --surface-dark-2: #2a2a2c;
+  --surface-black: #000000;
+  --surface-pearl: #fafafc;
   --text: #1d1d1f;
   --muted: #6e6e73;
-  --line: #d2d2d7;
-  --action: #0071e3;
+  --muted-on-dark: #cccccc;
+  --line: #e0e0e0;
+  --line-soft: rgba(0, 0, 0, 0.08);
+  --action: #0066cc;
   --action-strong: #005bbf;
+  --action-on-dark: #2997ff;
   --success: #248a3d;
   --danger: #d70015;
   --warning: #b25000;
-  --shadow: 0 18px 45px rgba(0, 0, 0, 0.08);
+  --radius-card: 18px;
+  --radius-compact: 8px;
 }
 
 * {
@@ -31,6 +40,9 @@ body {
     -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", system-ui,
     sans-serif;
   letter-spacing: 0;
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.47;
 }
 
 button,
@@ -51,7 +63,7 @@ button:disabled {
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid rgba(0, 113, 227, 0.22);
+  outline: 2px solid #0071e3;
   outline-offset: 2px;
 }
 
@@ -59,43 +71,40 @@ textarea:focus-visible {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 72px 24px 40px;
+  padding: 96px 24px 56px;
   position: relative;
+  background: var(--background);
 }
 
 .login-nav {
   position: fixed;
   inset: 0 0 auto;
-  height: 48px;
+  height: 44px;
   display: flex;
   align-items: center;
   gap: 10px;
   justify-content: center;
-  background: rgba(245, 245, 247, 0.84);
-  border-bottom: 1px solid rgba(210, 210, 215, 0.7);
-  backdrop-filter: blur(18px);
-  font-size: 13px;
-  font-weight: 700;
+  background: var(--surface-black);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .brand-mark {
   width: 22px;
   height: 22px;
+  border: 5px solid rgba(255, 255, 255, 0.84);
   border-radius: 50%;
   display: inline-block;
-  background:
-    radial-gradient(circle at 35% 35%, #ffffff 0 16%, transparent 17%),
-    conic-gradient(from 210deg, #0071e3, #248a3d, #ffcc00, #d70015, #0071e3);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  background: var(--action);
 }
 
 .login-panel {
   width: min(100%, 440px);
-  padding: 40px;
+  padding: 48px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-card);
+  background: var(--canvas);
 }
 
 .login-panel > .eyebrow,
@@ -107,7 +116,7 @@ textarea:focus-visible {
   margin: 0 0 8px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -116,9 +125,9 @@ textarea:focus-visible {
 .detail-hero h1,
 .section-hero h1 {
   margin: 0;
-  font-size: clamp(34px, 6vw, 58px);
-  font-weight: 760;
-  line-height: 1.05;
+  font-size: 56px;
+  font-weight: 600;
+  line-height: 1.07;
 }
 
 .login-copy,
@@ -127,7 +136,9 @@ textarea:focus-visible {
 .section-hero p {
   margin: 16px 0 0;
   color: var(--muted);
-  line-height: 1.7;
+  font-size: 21px;
+  font-weight: 400;
+  line-height: 1.35;
 }
 
 .login-form,
@@ -141,22 +152,23 @@ label {
   display: grid;
   gap: 8px;
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 input,
 textarea {
   width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--canvas);
   color: var(--text);
-  padding: 12px 14px;
+  padding: 12px 20px;
 }
 
 textarea {
   min-height: 92px;
+  border-radius: var(--radius-card);
   resize: vertical;
 }
 
@@ -167,23 +179,36 @@ textarea {
   border-radius: 999px;
   background: var(--action);
   color: #fff;
-  padding: 12px 18px;
-  font-weight: 750;
+  padding: 11px 22px;
+  font-size: 17px;
+  font-weight: 400;
+  transition: transform 140ms ease;
 }
 
 .primary-button:hover,
 .hero-actions button:first-child:hover,
 .inline-form button:hover {
-  background: var(--action-strong);
+  background: var(--action);
+}
+
+.primary-button:active,
+.secondary-button:active,
+.hero-actions button:active,
+.inline-form button:active,
+.file-button:active,
+.segmented button:active {
+  transform: scale(0.95);
 }
 
 .secondary-button {
-  border: 1px solid var(--line);
+  border: 1px solid var(--action);
   border-radius: 999px;
-  background: #fff;
+  background: transparent;
   color: var(--action);
-  padding: 12px 18px;
-  font-weight: 750;
+  padding: 11px 22px;
+  font-size: 17px;
+  font-weight: 400;
+  transition: transform 140ms ease;
 }
 
 .secondary-button:hover {
@@ -239,13 +264,13 @@ textarea {
   min-width: 0;
   justify-items: center;
   gap: 5px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-compact);
   background: #fff;
   color: var(--muted);
   padding: 8px 4px;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .zodiac-avatar-grid button.active {
@@ -265,13 +290,13 @@ textarea {
   width: auto;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--line);
+  border: 1px solid var(--action);
   border-radius: 999px;
   background: #fff;
   color: var(--action);
   padding: 10px 14px;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 14px;
+  font-weight: 400;
 }
 
 .file-button input {
@@ -298,9 +323,9 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-quiet);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--surface-pearl);
 }
 
 .segmented.compact {
@@ -310,38 +335,36 @@ textarea {
 
 .segmented button {
   border: 0;
-  border-radius: 6px;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
   padding: 8px 12px;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 400;
 }
 
 .segmented button.active {
   background: #fff;
   color: var(--text);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .app-shell {
   min-height: 100vh;
-  padding-top: 52px;
+  padding-top: 96px;
 }
 
 .top-nav {
   position: fixed;
   z-index: 20;
   inset: 0 0 auto;
-  height: 52px;
+  height: 44px;
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 18px;
+  gap: 20px;
   padding: 0 24px;
-  border-bottom: 1px solid rgba(210, 210, 215, 0.7);
-  background: rgba(245, 245, 247, 0.86);
-  backdrop-filter: blur(18px);
+  background: var(--surface-black);
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .brand-button {
@@ -350,9 +373,9 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 760;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .top-nav nav {
@@ -367,17 +390,17 @@ textarea {
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.72);
   padding: 8px 12px;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .top-nav nav button.active,
 .top-nav nav button:hover,
 .user-area button:hover {
-  color: var(--text);
-  background: rgba(0, 0, 0, 0.06);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .user-area {
@@ -385,9 +408,9 @@ textarea {
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 650;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .user-avatar {
@@ -412,8 +435,8 @@ textarea {
 }
 
 .role-pill.member {
-  color: var(--success);
-  background: rgba(36, 138, 61, 0.1);
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .toast {
@@ -423,12 +446,11 @@ textarea {
   right: 24px;
   max-width: 420px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: #fff;
   padding: 14px 16px;
-  box-shadow: var(--shadow);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .toast.success {
@@ -449,7 +471,7 @@ textarea {
 .workspace {
   width: min(1200px, calc(100% - 40px));
   margin: 0 auto;
-  padding: 34px 0 64px;
+  padding: 0 0 80px;
 }
 
 .view-stack {
@@ -464,17 +486,34 @@ textarea {
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  min-height: 260px;
-  padding: 42px;
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(245, 245, 247, 0.78)),
-    radial-gradient(circle at top right, rgba(0, 113, 227, 0.15), transparent 34%);
-  border: 1px solid var(--line);
+  width: 100vw;
+  min-height: 360px;
+  margin-left: calc(50% - 50vw);
+  padding:
+    80px max(40px, calc((100vw - 1200px) / 2))
+    72px;
+  border: 0;
+  border-radius: 0;
+  background: var(--canvas);
+  color: var(--text);
 }
 
-.summary-hero h1 {
-  letter-spacing: 0;
+.summary-hero {
+  background: var(--surface-dark);
+  color: #fff;
+}
+
+.summary-hero .eyebrow,
+.summary-hero p {
+  color: var(--muted-on-dark);
+}
+
+.detail-hero {
+  background: var(--canvas);
+}
+
+.section-hero {
+  background: var(--background);
 }
 
 .hero-actions {
@@ -484,43 +523,48 @@ textarea {
 }
 
 .hero-actions button:last-child {
-  border: 1px solid var(--line);
-  background: #fff;
+  border: 1px solid var(--action);
+  background: transparent;
   color: var(--action);
+}
+
+.summary-hero .hero-actions button:last-child {
+  border-color: var(--action-on-dark);
+  color: var(--action-on-dark);
 }
 
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: 20px;
 }
 
 .metric-grid article,
 .surface-block {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--surface);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.04);
 }
 
 .metric-grid article {
-  padding: 20px;
+  padding: 24px;
 }
 
 .metric-grid span,
 .balance-focus span {
   display: block;
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .metric-grid strong,
 .balance-focus strong {
   display: block;
   margin-top: 8px;
-  font-size: clamp(26px, 4vw, 38px);
-  line-height: 1.1;
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.12;
 }
 
 .metric-grid small,
@@ -543,7 +587,7 @@ textarea {
 }
 
 .surface-block {
-  padding: 22px;
+  padding: 24px;
   min-width: 0;
 }
 
@@ -557,7 +601,8 @@ textarea {
 
 .section-heading h2 {
   margin: 0;
-  font-size: 22px;
+  font-size: 28px;
+  font-weight: 600;
   line-height: 1.2;
 }
 
@@ -578,9 +623,9 @@ textarea {
   grid-template-columns: minmax(0, 1fr) minmax(72px, 0.75fr) max-content;
   gap: 14px;
   align-items: center;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: var(--surface-quiet);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-compact);
+  background: var(--canvas);
   padding: 14px;
   text-align: left;
 }
@@ -601,12 +646,12 @@ textarea {
 
 .delete-user-button {
   border: 1px solid rgba(215, 0, 21, 0.24);
-  border-radius: 8px;
+  border-radius: 999px;
   background: #fff;
   color: var(--danger);
-  padding: 10px 12px;
-  font-size: 12px;
-  font-weight: 800;
+  padding: 9px 14px;
+  font-size: 14px;
+  font-weight: 400;
   white-space: nowrap;
 }
 
@@ -630,8 +675,9 @@ textarea {
   grid-template-columns: minmax(0, 1fr) max-content;
   gap: 14px;
   align-items: center;
-  border-radius: 8px;
-  background: var(--surface-quiet);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-compact);
+  background: var(--canvas);
   padding: 14px;
 }
 
@@ -662,12 +708,12 @@ textarea {
 .delete-restaurant-button {
   align-self: stretch;
   border: 1px solid rgba(215, 0, 21, 0.24);
-  border-radius: 8px;
+  border-radius: 999px;
   background: #fff;
   color: var(--danger);
-  padding: 0 12px;
-  font-size: 12px;
-  font-weight: 800;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 400;
   white-space: nowrap;
 }
 
@@ -686,7 +732,7 @@ textarea {
 .balance-row:hover,
 .restaurant-item:hover {
   border-color: rgba(0, 113, 227, 0.38);
-  background: rgba(0, 113, 227, 0.06);
+  background: #fff;
 }
 
 .balance-row strong,
@@ -694,7 +740,8 @@ textarea {
 .user-row strong {
   display: block;
   color: var(--text);
-  font-size: 14px;
+  font-size: 17px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -713,7 +760,8 @@ td small {
 .balance-row b,
 .restaurant-item b {
   color: var(--text);
-  font-size: 14px;
+  font-size: 17px;
+  font-weight: 600;
   justify-self: end;
   white-space: nowrap;
 }
@@ -730,7 +778,7 @@ td small {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--action), var(--success));
+  background: var(--action);
 }
 
 @media (max-width: 1080px) and (min-width: 901px) {
@@ -746,10 +794,10 @@ td small {
 
 .balance-focus {
   min-width: 280px;
-  border-radius: 8px;
-  border: 1px solid rgba(210, 210, 215, 0.75);
-  background: rgba(255, 255, 255, 0.86);
-  padding: 22px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  padding: 24px;
 }
 
 .search-input {
@@ -758,7 +806,7 @@ td small {
 
 .warning-text {
   color: var(--warning) !important;
-  font-weight: 760;
+  font-weight: 600;
   text-align: right;
 }
 
@@ -776,16 +824,16 @@ td small {
   grid-template-columns: 64px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-quiet);
-  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--canvas);
+  padding: 12px;
 }
 
 .receipt-preview img {
   width: 64px;
   height: 64px;
-  border-radius: 8px;
+  border-radius: var(--radius-compact);
   object-fit: cover;
   background: #e8e8ed;
 }
@@ -811,13 +859,13 @@ td small {
 
 .receipt-preview button,
 .receipt-link {
-  border: 1px solid var(--line);
+  border: 1px solid var(--action);
   border-radius: 999px;
   background: #fff;
   color: var(--action);
-  padding: 7px 11px;
-  font-size: 12px;
-  font-weight: 800;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 400;
   white-space: nowrap;
 }
 
@@ -832,9 +880,9 @@ td small {
   border-radius: 999px;
   background: #fff;
   color: var(--danger);
-  padding: 7px 11px;
-  font-size: 12px;
-  font-weight: 800;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 400;
   white-space: nowrap;
 }
 
@@ -847,15 +895,16 @@ td small {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-radius: 8px;
-  background: var(--surface-quiet);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-compact);
+  background: var(--canvas);
   padding: 14px;
 }
 
 .balance-preview span {
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .inline-form {
@@ -872,22 +921,23 @@ td small {
 table {
   width: 100%;
   min-width: 800px;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 th,
 td {
   border-bottom: 1px solid #ececf0;
-  padding: 14px 12px;
+  padding: 16px 12px;
   text-align: left;
   vertical-align: middle;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 th {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 td strong {
@@ -896,7 +946,7 @@ td strong {
 }
 
 .money {
-  font-weight: 800;
+  font-weight: 600;
   text-align: right;
   white-space: nowrap;
 }
@@ -912,16 +962,16 @@ td strong {
 .muted-cell {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .type-badge {
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
-  padding: 5px 9px;
+  padding: 5px 10px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -947,8 +997,9 @@ td strong {
 
 .empty-state {
   margin: 0;
-  border-radius: 8px;
-  background: var(--surface-quiet);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--canvas);
   padding: 28px;
   color: var(--muted);
   text-align: center;

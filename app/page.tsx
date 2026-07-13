@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import type {
   ApiErrorBody,
   AvatarPreset,
@@ -133,8 +133,8 @@ async function parseApiError(response: Response) {
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
-  const [loginRole, setLoginRole] = useState<Role>("ADMIN");
-  const [loginEmail, setLoginEmail] = useState("admin@team.local");
+  const [loginRole, setLoginRole] = useState<Role>("MEMBER");
+  const [loginEmail, setLoginEmail] = useState("member@nonghyup.com");
   const [loginName, setLoginName] = useState("");
   const [signupName, setSignupName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
@@ -171,6 +171,12 @@ export default function Home() {
   const selectedSignupAvatar =
     zodiacAvatarOptions.find((option) => option.id === signupAvatarPreset) ??
     zodiacAvatarOptions[4];
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   const balanceByRestaurant = useMemo(() => {
     return new Map(balances.map((balance) => [balance.restaurantId, balance]));
@@ -702,7 +708,7 @@ export default function Home() {
                 <input
                   autoComplete="email"
                   inputMode="email"
-                  placeholder="name@team.local"
+                  placeholder="name@nonghyup.com"
                   type="email"
                   value={loginEmail}
                   onChange={(event) => setLoginEmail(event.target.value)}
@@ -723,7 +729,7 @@ export default function Home() {
                   type="button"
                   onClick={() => {
                     setLoginRole("MEMBER");
-                    setLoginEmail("member@team.local");
+                    setLoginEmail("member@nonghyup.com");
                   }}
                 >
                   팀원
@@ -733,7 +739,7 @@ export default function Home() {
                   type="button"
                   onClick={() => {
                     setLoginRole("ADMIN");
-                    setLoginEmail("admin@team.local");
+                    setLoginEmail("admin@nonghyup.com");
                   }}
                 >
                   관리자
@@ -770,7 +776,7 @@ export default function Home() {
                 <input
                   autoComplete="email"
                   inputMode="email"
-                  placeholder="name@team.local"
+                  placeholder="name@nonghyup.com"
                   type="email"
                   value={signupEmail}
                   onChange={(event) => setSignupEmail(event.target.value)}
