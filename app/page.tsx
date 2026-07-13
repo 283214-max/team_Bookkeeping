@@ -134,6 +134,8 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [loginRole, setLoginRole] = useState<Role>("ADMIN");
+  const [loginEmail, setLoginEmail] = useState("admin@team.local");
+  const [loginName, setLoginName] = useState("");
   const [signupName, setSignupName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
   const [signupAvatarFile, setSignupAvatarFile] = useState<File | null>(null);
@@ -330,7 +332,11 @@ export default function Home() {
         "/auth/login",
         {
           method: "POST",
-          body: JSON.stringify({ role: loginRole }),
+          body: JSON.stringify({
+            email: loginEmail,
+            name: loginName,
+            role: loginRole,
+          }),
         },
         "",
       );
@@ -692,32 +698,43 @@ export default function Home() {
           {authMode === "login" ? (
             <form className="login-form" onSubmit={handleLogin}>
               <label>
-                계정
+                이메일
                 <input
-                  value={
-                    loginRole === "ADMIN"
-                      ? "admin@team.local"
-                      : "member@team.local"
-                  }
-                  readOnly
+                  autoComplete="email"
+                  inputMode="email"
+                  placeholder="name@team.local"
+                  type="email"
+                  value={loginEmail}
+                  onChange={(event) => setLoginEmail(event.target.value)}
                 />
               </label>
               <label>
-                비밀번호
-                <input value="front-demo" readOnly type="password" />
+                이름
+                <input
+                  autoComplete="name"
+                  placeholder="가입한 이름"
+                  value={loginName}
+                  onChange={(event) => setLoginName(event.target.value)}
+                />
               </label>
               <div className="segmented" aria-label="로그인 역할 선택">
                 <button
                   className={loginRole === "MEMBER" ? "active" : ""}
                   type="button"
-                  onClick={() => setLoginRole("MEMBER")}
+                  onClick={() => {
+                    setLoginRole("MEMBER");
+                    setLoginEmail("member@team.local");
+                  }}
                 >
                   팀원
                 </button>
                 <button
                   className={loginRole === "ADMIN" ? "active" : ""}
                   type="button"
-                  onClick={() => setLoginRole("ADMIN")}
+                  onClick={() => {
+                    setLoginRole("ADMIN");
+                    setLoginEmail("admin@team.local");
+                  }}
                 >
                   관리자
                 </button>

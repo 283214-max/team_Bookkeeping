@@ -1144,8 +1144,17 @@ export async function requireAdmin(request: Request) {
   return user;
 }
 
-export async function loginUser(input: { email?: string; role?: Role }) {
+export async function loginUser(input: { email?: string; name?: string }) {
   await ensureDatabase();
+  const email = input.email?.trim().toLowerCase();
+  const name = input.name?.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw validationError("계정 이메일을 입력해 주세요.", { field: "email" });
+  }
+  if (!name) {
+    throw validationError("이름을 입력해 주세요.", { field: "name" });
+  }
+
   const row = await first<UserRow>(
     `SELECT
       id, email, name, role, status,
@@ -1158,14 +1167,17 @@ export async function loginUser(input: { email?: string; role?: Role }) {
       created_at as createdAt,
       updated_at as updatedAt
     FROM users
-    WHERE ${input.email ? "email = ?" : "role = ?"}
+    WHERE LOWER(email) = LOWER(?)
     ORDER BY created_at ASC
     LIMIT 1`,
-    [input.email ?? input.role ?? "MEMBER"],
+    [email],
   );
 
   if (!row || row.status !== "ACTIVE") {
     throw unauthorized("로그인할 수 있는 사용자를 찾을 수 없습니다.");
+  }
+  if (row.name.trim() !== name) {
+    throw unauthorized("계정 이메일과 이름이 일치하지 않습니다.");
   }
 
   const user = toUser(row);
