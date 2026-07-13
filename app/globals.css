@@ -733,11 +733,20 @@ textarea {
   min-width: 0;
 }
 
-.restaurant-item.active,
 .balance-row:hover,
 .restaurant-item:hover {
   border-color: rgba(0, 113, 227, 0.38);
   background: #fff;
+}
+
+.restaurant-item.active {
+  border-color: rgba(0, 113, 227, 0.62);
+  background: #eaf5ff;
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+
+.restaurant-item.active:hover {
+  background: #eaf5ff;
 }
 
 .balance-row strong,

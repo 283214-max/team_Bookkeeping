@@ -21,6 +21,8 @@ type AuthMode = "login" | "signup";
 
 const appSessionKey = "team-budget-session";
 const viewIds: View[] = ["dashboard", "restaurants", "transactions", "admin"];
+const receiptImageMaxDimension = 1280;
+const receiptImageQuality = 0.72;
 
 type Toast = {
   tone: "success" | "warning" | "danger";
@@ -152,6 +154,68 @@ function createIdempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function receiptJpegFileName(fileName: string) {
+  const trimmed = fileName.trim() || "receipt";
+  const dotIndex = trimmed.lastIndexOf(".");
+  const baseName = dotIndex > 0 ? trimmed.slice(0, dotIndex) : trimmed;
+  return `${baseName || "receipt"}.jpg`;
+}
+
+function loadImageFile(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Unable to load image."));
+    };
+    image.src = url;
+  });
+}
+
+async function compressReceiptImage(file: File) {
+  if (!file.type.startsWith("image/")) return file;
+
+  try {
+    const image = await loadImageFile(file);
+    const sourceWidth = image.naturalWidth || image.width;
+    const sourceHeight = image.naturalHeight || image.height;
+    if (!sourceWidth || !sourceHeight) return file;
+
+    const scale = Math.min(
+      1,
+      receiptImageMaxDimension / sourceWidth,
+      receiptImageMaxDimension / sourceHeight,
+    );
+    const width = Math.max(1, Math.round(sourceWidth * scale));
+    const height = Math.max(1, Math.round(sourceHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+    if (!context) return file;
+
+    context.drawImage(image, 0, 0, width, height);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", receiptImageQuality),
+    );
+    if (!blob || blob.size >= file.size) return file;
+
+    return new File([blob], receiptJpegFileName(file.name), {
+      type: "image/jpeg",
+      lastModified: file.lastModified,
+    });
+  } catch {
+    return file;
+  }
+}
+
 function splitRestaurantItems(items: RestaurantListItem[]) {
   return {
     restaurants: items.map((item) => ({
@@ -216,6 +280,8 @@ export default function Home() {
   const [amountInput, setAmountInput] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreviewUrl, setReceiptPreviewUrl] = useState("");
+  const [isCompressingReceipt, setIsCompressingReceipt] = useState(false);
+  const [receiptInputKey, setReceiptInputKey] = useState(0);
   const [dateInput, setDateInput] = useState(getToday());
   const [adjustDirection, setAdjustDirection] = useState<"increase" | "decrease">(
     "increase",
@@ -382,17 +448,35 @@ export default function Home() {
     setAmountInput("");
     setReceiptFile(null);
     setReceiptPreviewUrl("");
+    setReceiptInputKey((key) => key + 1);
     setDateInput(getToday());
     setAdjustDirection("increase");
     setToast(null);
   }
 
-  function handleReceiptFileChange(file: File | null) {
+  async function handleReceiptFileChange(file: File | null) {
     if (receiptPreviewUrl) {
       URL.revokeObjectURL(receiptPreviewUrl);
     }
-    setReceiptFile(file);
-    setReceiptPreviewUrl(file ? URL.createObjectURL(file) : "");
+
+    if (!file) {
+      setIsCompressingReceipt(false);
+      setReceiptFile(null);
+      setReceiptPreviewUrl("");
+      setReceiptInputKey((key) => key + 1);
+      return;
+    }
+
+    setIsCompressingReceipt(true);
+    setReceiptFile(null);
+    setReceiptPreviewUrl("");
+    try {
+      const compressedFile = await compressReceiptImage(file);
+      setReceiptFile(compressedFile);
+      setReceiptPreviewUrl(URL.createObjectURL(compressedFile));
+    } finally {
+      setIsCompressingReceipt(false);
+    }
   }
 
   function handleSignupAvatarChange(file: File | null) {
@@ -508,6 +592,10 @@ export default function Home() {
       setToast({ tone: "danger", message: "0원보다 큰 금액을 입력해 주세요." });
       return;
     }
+    if (actionMode === "spend" && isCompressingReceipt) {
+      setToast({ tone: "warning", message: "영수증 사진 압축 중입니다." });
+      return;
+    }
     if (actionMode === "spend" && !receiptFile) {
       window.alert("영수증 사진을 첨부해주세요.");
       return;
@@ -544,12 +632,30 @@ export default function Home() {
     }
 
     setIsLoading(true);
+    setToast({ tone: "warning", message: "처리중입니다." });
     try {
       const result = await apiFetch<TransactionMutationResult>(endpoint, {
         method: "POST",
         body: body instanceof FormData ? body : JSON.stringify(body),
       });
-      await loadAppData(accessToken, currentUser);
+      setBalances((items) =>
+        items.map((balance) =>
+          balance.restaurantId === result.balance.restaurantId
+            ? result.balance
+            : balance,
+        ),
+      );
+      setTransactions((items) => [
+        result.transaction,
+        ...items.filter((transaction) => transaction.id !== result.transaction.id),
+      ]);
+      setRestaurants((items) =>
+        items.map((restaurant) =>
+          restaurant.id === result.balance.restaurantId
+            ? { ...restaurant, updatedAt: result.balance.updatedAt }
+            : restaurant,
+        ),
+      );
       setAmountInput("");
       handleReceiptFileChange(null);
       setToast({
@@ -1024,10 +1130,12 @@ export default function Home() {
             dateInput={dateInput}
             filteredRestaurants={filteredRestaurants}
             isAdmin={isAdmin}
+            isSubmitting={isLoading || isCompressingReceipt}
             newRestaurantAmount={newRestaurantAmount}
             newRestaurantName={newRestaurantName}
             query={restaurantQuery}
             receiptFile={receiptFile}
+            receiptInputKey={receiptInputKey}
             receiptPreviewUrl={receiptPreviewUrl}
             selectedBalance={selectedBalance}
             selectedRestaurant={selectedRestaurant}
@@ -1224,9 +1332,11 @@ function RestaurantsView({
   dateInput,
   filteredRestaurants,
   isAdmin,
+  isSubmitting,
   newRestaurantAmount,
   newRestaurantName,
   receiptFile,
+  receiptInputKey,
   receiptPreviewUrl,
   onActionModeChange,
   onAdjustDirectionChange,
@@ -1255,9 +1365,11 @@ function RestaurantsView({
   dateInput: string;
   filteredRestaurants: Restaurant[];
   isAdmin: boolean;
+  isSubmitting: boolean;
   newRestaurantAmount: string;
   newRestaurantName: string;
   receiptFile: File | null;
+  receiptInputKey: number;
   receiptPreviewUrl: string;
   onActionModeChange: (mode: ActionMode) => void;
   onAdjustDirectionChange: (direction: "increase" | "decrease") => void;
@@ -1270,7 +1382,7 @@ function RestaurantsView({
   onNewRestaurantNameChange: (value: string) => void;
   onOpenReceipt: (transaction: LedgerTransaction) => void;
   onQueryChange: (value: string) => void;
-  onReceiptFileChange: (file: File | null) => void;
+  onReceiptFileChange: (file: File | null) => void | Promise<void>;
   onSelectRestaurant: (restaurantId: string) => void;
   onSubmitTransaction: (event: FormEvent<HTMLFormElement>) => void;
   query: string;
@@ -1433,6 +1545,7 @@ function RestaurantsView({
                   영수증 사진
                   <input
                     accept="image/jpeg,image/png,image/webp"
+                    key={receiptInputKey}
                     type="file"
                     onChange={(event) =>
                       onReceiptFileChange(event.target.files?.[0] ?? null)
@@ -1460,7 +1573,7 @@ function RestaurantsView({
               <span>변경 전</span>
               <b>{formatMoney(selectedBalance.currentAmount)}</b>
             </div>
-            <button className="primary-button" type="submit">
+            <button className="primary-button" disabled={isSubmitting} type="submit">
               저장
             </button>
           </form>
