@@ -112,6 +112,11 @@ textarea:focus-visible {
   text-align: center;
 }
 
+.login-panel > .eyebrow {
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
 .eyebrow {
   margin: 0 0 8px;
   color: var(--muted);

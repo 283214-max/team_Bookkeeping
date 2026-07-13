@@ -739,11 +739,21 @@ function ensureIdempotencyKey(idempotencyKey: string | undefined) {
 }
 
 function safeImageFileName(fileName: string) {
-  return fileName
-    .trim()
-    .replace(/[/\\?%*:|"<>]/g, "-")
-    .replace(/\s+/g, "-")
-    .slice(0, 120);
+  const trimmed = fileName.trim();
+  const extensionMatch = trimmed.match(/\.(jpe?g|png|webp)$/i);
+  const extension = extensionMatch
+    ? `.${extensionMatch[1].toLowerCase().replace("jpeg", "jpg")}`
+    : "";
+  const rawName = extension ? trimmed.slice(0, -extension.length) : trimmed;
+  const safeName = rawName
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-._]+|[-._]+$/g, "")
+    .slice(0, 80);
+
+  return `${safeName || "image"}${extension}`;
 }
 
 function validateImageUpload(upload: ReceiptUpload | AvatarUpload, label: string) {

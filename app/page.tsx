@@ -141,6 +141,10 @@ function readSavedSession(): SavedSession | null {
   }
 }
 
+function writeSavedSession(session: SavedSession) {
+  window.localStorage.setItem(appSessionKey, JSON.stringify(session));
+}
+
 function createIdempotencyKey(prefix: string) {
   if (globalThis.crypto?.randomUUID) {
     return `${prefix}-${globalThis.crypto.randomUUID()}`;
@@ -235,11 +239,10 @@ export default function Home() {
     if (!initialSession) return;
 
     loadAppData(initialSession.accessToken, initialSession.user).catch(() => {
-      window.localStorage.removeItem(appSessionKey);
-      setAccessToken("");
-      setCurrentUser(anonymousUser);
-      setIsAuthenticated(false);
-      setActiveView("dashboard");
+      setToast({
+        tone: "warning",
+        message: "저장된 화면을 복원했지만 최신 데이터를 불러오지 못했습니다.",
+      });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -253,7 +256,7 @@ export default function Home() {
       selectedRestaurantId,
       user: currentUser,
     };
-    window.localStorage.setItem(appSessionKey, JSON.stringify(saved));
+    writeSavedSession(saved);
   }, [accessToken, activeView, currentUser, isAuthenticated, selectedRestaurantId]);
 
   const balanceByRestaurant = useMemo(() => {
@@ -406,6 +409,12 @@ export default function Home() {
     await loadAppData(result.accessToken, result.user);
     setIsAuthenticated(true);
     setActiveView("dashboard");
+    writeSavedSession({
+      accessToken: result.accessToken,
+      activeView: "dashboard",
+      selectedRestaurantId: "",
+      user: result.user,
+    });
   }
 
   function handleLogout() {
