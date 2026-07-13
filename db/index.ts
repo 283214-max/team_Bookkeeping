@@ -79,13 +79,22 @@ let supabaseAdmin: SupabaseClient | null = null;
 let localDatabaseClient: DatabaseClient | null = null;
 
 function getDatabaseUrl() {
-  const url = process.env.DATABASE_URL;
+  const url = getConfiguredDatabaseUrl();
   if (!url) {
     throw new Error(
-      "DATABASE_URL is required for Supabase Postgres. Add the Supabase pooled connection string before using the API.",
+      "Postgres connection URL is required. Set DATABASE_URL or use the Vercel Supabase POSTGRES_URL integration variable.",
     );
   }
   return url;
+}
+
+function getConfiguredDatabaseUrl() {
+  return (
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.POSTGRES_URL_NON_POOLING
+  );
 }
 
 function getQueryClient() {
@@ -125,7 +134,7 @@ function getStorageBucketName() {
 }
 
 function shouldUseLocalFallback() {
-  return !process.env.DATABASE_URL && process.env.VERCEL !== "1";
+  return !getConfiguredDatabaseUrl() && process.env.VERCEL !== "1";
 }
 
 function quoteCamelCaseAliases(sql: string) {

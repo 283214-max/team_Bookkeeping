@@ -4,14 +4,18 @@ import { defineConfig } from "drizzle-kit";
 
 loadLocalEnv();
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl =
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.POSTGRES_PRISMA_URL ||
+  process.env.POSTGRES_URL_NON_POOLING;
 const requiresDatabase = process.argv.some((arg) =>
   ["migrate", "push", "studio", "introspect"].includes(arg),
 );
 
 if (!databaseUrl && requiresDatabase) {
   throw new Error(
-    "DATABASE_URL is required. Copy .env.example to .env and set your Supabase Postgres connection string.",
+    "Postgres connection URL is required. Copy .env.example to .env and set DATABASE_URL or POSTGRES_URL.",
   );
 }
 
