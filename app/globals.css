@@ -161,6 +161,12 @@ label {
   font-weight: 600;
 }
 
+.field-label {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
 input,
 textarea {
   width: 100%;
@@ -937,6 +943,33 @@ td small {
   grid-column: 1 / -1;
   color: var(--muted);
   font-size: 13px;
+}
+
+.transfer-account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.transfer-account button {
+  border: 0;
+  background: transparent;
+  color: var(--action);
+  padding: 2px 4px;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.transfer-account strong {
+  color: var(--text);
+  font-size: 14px;
 }
 
 .inline-form {

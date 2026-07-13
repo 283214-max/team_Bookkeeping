@@ -23,6 +23,7 @@ const appSessionKey = "team-budget-session";
 const viewIds: View[] = ["dashboard", "restaurants", "transactions", "admin"];
 const receiptImageMaxDimension = 1280;
 const receiptImageQuality = 0.72;
+const transferAccountNumber = "302-2112-3752-91";
 
 type Toast = {
   tone: "success" | "warning" | "danger";
@@ -454,8 +455,36 @@ export default function Home() {
   }
 
   function selectRestaurant(restaurantId: string) {
+    if (activeView !== "restaurants") {
+      clearPageInputs();
+    }
     setSelectedRestaurantId(restaurantId);
     setActiveView("restaurants");
+    setToast(null);
+  }
+
+  function clearPageInputs() {
+    if (receiptPreviewUrl) {
+      URL.revokeObjectURL(receiptPreviewUrl);
+    }
+    setRestaurantQuery("");
+    setTransactionFilter("ALL");
+    setActionMode("spend");
+    setAmountInput("");
+    setReceiptFile(null);
+    setReceiptPreviewUrl("");
+    setReceiptInputKey((key) => key + 1);
+    setDateInput(getToday());
+    setAdjustDirection("increase");
+    setNewRestaurantName("");
+    setNewRestaurantAmount("");
+  }
+
+  function navigateToView(view: View) {
+    if (view !== activeView) {
+      clearPageInputs();
+    }
+    setActiveView(view);
     setToast(null);
   }
 
@@ -501,6 +530,27 @@ export default function Home() {
     }
     setSignupAvatarFile(file);
     setSignupAvatarPreviewUrl(file ? URL.createObjectURL(file) : "");
+  }
+
+  function resetLoginForm() {
+    setLoginRole("MEMBER");
+    setLoginEmail("member@nonghyup.com");
+    setLoginName("");
+  }
+
+  function resetSignupForm() {
+    setSignupName("");
+    setSignupEmail("");
+    setSignupApprovalCode("");
+    handleSignupAvatarChange(null);
+    setSignupAvatarPreset("dragon");
+  }
+
+  function switchAuthMode(mode: AuthMode) {
+    resetLoginForm();
+    resetSignupForm();
+    setAuthMode(mode);
+    setToast(null);
   }
 
   async function completeAuthentication(result: LoginResponse) {
@@ -620,11 +670,11 @@ export default function Home() {
       return;
     }
     if (transactionActionMode === "spend" && isCompressingReceipt) {
-      setToast({ tone: "warning", message: "영수증 사진 압축 중입니다." });
+      setToast({ tone: "warning", message: "장부 사진 압축 중입니다." });
       return;
     }
     if (transactionActionMode === "spend" && !receiptFile) {
-      window.alert("영수증 사진을 첨부해주세요.");
+      window.alert("장부 사진을 첨부해주세요.");
       return;
     }
 
@@ -899,6 +949,21 @@ export default function Home() {
     }
   }
 
+  async function copyTransferAccountNumber() {
+    try {
+      await navigator.clipboard.writeText(transferAccountNumber);
+      setToast({
+        tone: "success",
+        message: "계좌번호를 복사했습니다.",
+      });
+    } catch {
+      setToast({
+        tone: "danger",
+        message: "계좌번호 복사에 실패했습니다.",
+      });
+    }
+  }
+
   async function deleteUser(user: User) {
     if (user.id === currentUser.id) {
       setToast({ tone: "danger", message: "본인 계정은 삭제할 수 없습니다." });
@@ -1023,10 +1088,7 @@ export default function Home() {
                 className="secondary-button"
                 disabled={isLoading}
                 type="button"
-                onClick={() => {
-                  setAuthMode("signup");
-                  setToast(null);
-                }}
+                onClick={() => switchAuthMode("signup")}
               >
                 회원가입
               </button>
@@ -1123,10 +1185,7 @@ export default function Home() {
                 className="secondary-button"
                 disabled={isLoading}
                 type="button"
-                onClick={() => {
-                  setAuthMode("login");
-                  setToast(null);
-                }}
+                onClick={() => switchAuthMode("login")}
               >
                 로그인으로 돌아가기
               </button>
@@ -1143,7 +1202,7 @@ export default function Home() {
         <button
           className="brand-button"
           type="button"
-          onClick={() => setActiveView("dashboard")}
+          onClick={() => navigateToView("dashboard")}
         >
           <span className="brand-mark" aria-hidden="true" />
           <span>마이데이터팀 가계부</span>
@@ -1156,7 +1215,7 @@ export default function Home() {
                 className={activeView === item.id ? "active" : ""}
                 key={item.id}
                 type="button"
-                onClick={() => setActiveView(item.id)}
+                onClick={() => navigateToView(item.id)}
               >
                 {item.label}
               </button>
@@ -1193,8 +1252,8 @@ export default function Home() {
             onSelectRestaurant={selectRestaurant}
             onOpenReceipt={openReceipt}
             onStartSpend={(restaurantId) => {
+              clearPageInputs();
               setSelectedRestaurantId(restaurantId);
-              resetTransactionForm("spend");
               setActiveView("restaurants");
             }}
           />
@@ -1238,6 +1297,7 @@ export default function Home() {
             onSelectRestaurant={setSelectedRestaurantId}
             onSubmitTransaction={handleTransactionSubmit}
             onOpenReceipt={openReceipt}
+            onCopyTransferAccount={copyTransferAccountNumber}
           />
         )}
 
@@ -1431,6 +1491,7 @@ function RestaurantsView({
   onNewRestaurantAmountChange,
   onNewRestaurantNameChange,
   onOpenReceipt,
+  onCopyTransferAccount,
   onQueryChange,
   onReceiptFileChange,
   onSelectRestaurant,
@@ -1464,6 +1525,7 @@ function RestaurantsView({
   onNewRestaurantAmountChange: (value: string) => void;
   onNewRestaurantNameChange: (value: string) => void;
   onOpenReceipt: (transaction: LedgerTransaction) => void;
+  onCopyTransferAccount: () => void;
   onQueryChange: (value: string) => void;
   onReceiptFileChange: (file: File | null) => void | Promise<void>;
   onSelectRestaurant: (restaurantId: string) => void;
@@ -1650,8 +1712,9 @@ function RestaurantsView({
             )}
             {actionMode === "spend" && (
               <div className="receipt-field">
-                <label>
-                  영수증 사진
+                <span className="field-label">장부 사진</span>
+                <label className="file-button">
+                  장부사진 선택
                   <input
                     accept="image/jpeg,image/png,image/webp"
                     key={receiptInputKey}
@@ -1665,7 +1728,7 @@ function RestaurantsView({
                   <div className="receipt-preview">
                     {receiptPreviewUrl && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img alt="첨부한 영수증 미리보기" src={receiptPreviewUrl} />
+                      <img alt="첨부한 장부 사진 미리보기" src={receiptPreviewUrl} />
                     )}
                     <span>
                       <strong>{receiptFile.name}</strong>
@@ -1686,6 +1749,15 @@ function RestaurantsView({
             <button className="primary-button" disabled={isSubmitting} type="submit">
               {actionMode === "topup" ? "추가결재 반영" : "저장"}
             </button>
+            {actionMode === "spend" && currentUser.role === "MEMBER" && (
+              <div className="transfer-account">
+                <span>계좌번호 농협</span>
+                <button type="button" onClick={onCopyTransferAccount}>
+                  {transferAccountNumber}
+                </button>
+                <strong>양승봉</strong>
+              </div>
+            )}
           </form>
         </div>
       </section>
