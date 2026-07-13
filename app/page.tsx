@@ -19,6 +19,9 @@ type View = "dashboard" | "restaurants" | "transactions" | "admin";
 type ActionMode = "spend" | "topup" | "adjust";
 type AuthMode = "login" | "signup";
 
+const appSessionKey = "team-budget-session";
+const viewIds: View[] = ["dashboard", "restaurants", "transactions", "admin"];
+
 type Toast = {
   tone: "success" | "warning" | "danger";
   message: string;
@@ -32,6 +35,13 @@ type LoginResponse = {
 type ListResponse<T> = {
   items: T[];
   total: number;
+};
+
+type SavedSession = {
+  accessToken: string;
+  activeView: View;
+  selectedRestaurantId: string;
+  user: User;
 };
 
 const anonymousUser: User = {
@@ -97,6 +107,40 @@ function getToday() {
   }).format(new Date());
 }
 
+function isView(value: unknown): value is View {
+  return typeof value === "string" && viewIds.includes(value as View);
+}
+
+function normalizeSavedView(value: unknown, user: User): View {
+  const view = isView(value) ? value : "dashboard";
+  return view === "admin" && user.role !== "ADMIN" ? "dashboard" : view;
+}
+
+function readSavedSession(): SavedSession | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const savedText = window.localStorage.getItem(appSessionKey);
+    if (!savedText) return null;
+
+    const saved = JSON.parse(savedText) as Partial<SavedSession>;
+    if (!saved.accessToken || !saved.user?.id) return null;
+
+    return {
+      accessToken: saved.accessToken,
+      activeView: normalizeSavedView(saved.activeView, saved.user),
+      selectedRestaurantId:
+        typeof saved.selectedRestaurantId === "string"
+          ? saved.selectedRestaurantId
+          : "",
+      user: saved.user,
+    };
+  } catch {
+    window.localStorage.removeItem(appSessionKey);
+    return null;
+  }
+}
+
 function createIdempotencyKey(prefix: string) {
   if (globalThis.crypto?.randomUUID) {
     return `${prefix}-${globalThis.crypto.randomUUID()}`;
@@ -131,7 +175,8 @@ async function parseApiError(response: Response) {
 }
 
 export default function Home() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [initialSession] = useState<SavedSession | null>(() => readSavedSession());
+  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(initialSession));
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [loginRole, setLoginRole] = useState<Role>("MEMBER");
   const [loginEmail, setLoginEmail] = useState("member@nonghyup.com");
@@ -142,15 +187,23 @@ export default function Home() {
   const [signupAvatarPreviewUrl, setSignupAvatarPreviewUrl] = useState("");
   const [signupAvatarPreset, setSignupAvatarPreset] =
     useState<AvatarPreset>("dragon");
-  const [accessToken, setAccessToken] = useState("");
+  const [accessToken, setAccessToken] = useState(
+    initialSession?.accessToken ?? "",
+  );
   const [isLoading, setIsLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User>(anonymousUser);
+  const [currentUser, setCurrentUser] = useState<User>(
+    initialSession?.user ?? anonymousUser,
+  );
   const [users, setUsers] = useState<User[]>([]);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [transactions, setTransactions] = useState<LedgerTransaction[]>([]);
-  const [activeView, setActiveView] = useState<View>("dashboard");
-  const [selectedRestaurantId, setSelectedRestaurantId] = useState("");
+  const [activeView, setActiveView] = useState<View>(
+    initialSession?.activeView ?? "dashboard",
+  );
+  const [selectedRestaurantId, setSelectedRestaurantId] = useState(
+    initialSession?.selectedRestaurantId ?? "",
+  );
   const [restaurantQuery, setRestaurantQuery] = useState("");
   const [transactionFilter, setTransactionFilter] = useState<
     "ALL" | TransactionType
@@ -177,6 +230,31 @@ export default function Home() {
     const timer = window.setTimeout(() => setToast(null), 5000);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!initialSession) return;
+
+    loadAppData(initialSession.accessToken, initialSession.user).catch(() => {
+      window.localStorage.removeItem(appSessionKey);
+      setAccessToken("");
+      setCurrentUser(anonymousUser);
+      setIsAuthenticated(false);
+      setActiveView("dashboard");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !accessToken || !currentUser.id) return;
+
+    const saved: SavedSession = {
+      accessToken,
+      activeView,
+      selectedRestaurantId,
+      user: currentUser,
+    };
+    window.localStorage.setItem(appSessionKey, JSON.stringify(saved));
+  }, [accessToken, activeView, currentUser, isAuthenticated, selectedRestaurantId]);
 
   const balanceByRestaurant = useMemo(() => {
     return new Map(balances.map((balance) => [balance.restaurantId, balance]));
@@ -328,6 +406,16 @@ export default function Home() {
     await loadAppData(result.accessToken, result.user);
     setIsAuthenticated(true);
     setActiveView("dashboard");
+  }
+
+  function handleLogout() {
+    window.localStorage.removeItem(appSessionKey);
+    setAccessToken("");
+    setCurrentUser(anonymousUser);
+    setIsAuthenticated(false);
+    setActiveView("dashboard");
+    setSelectedRestaurantId("");
+    setToast(null);
   }
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
@@ -886,7 +974,7 @@ export default function Home() {
             {currentUser.role === "ADMIN" ? "관리자" : "팀원"}
           </span>
           <span>{currentUser.name}</span>
-          <button type="button" onClick={() => setIsAuthenticated(false)}>
+          <button type="button" onClick={handleLogout}>
             로그아웃
           </button>
         </div>
