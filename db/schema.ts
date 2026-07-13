@@ -20,6 +20,7 @@ export const users = pgTable(
     avatarFileName: text("avatar_file_name"),
     avatarContentType: text("avatar_content_type"),
     avatarSize: integer("avatar_size"),
+    avatarPreset: text("avatar_preset"),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP::text`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP::text`),
   },

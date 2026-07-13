@@ -1,566 +1,547 @@
-# 팀 가계부 웹앱 프로젝트 문서
+# Mydata Team Bookkeeping 프로젝트 문서
 
-문서 기준일: 2026-07-02  
-대상 서비스: 소규모 팀 내부에서 식당별 예산, 잔액, 사용 내역을 관리하는 웹앱
+문서 기준일: 2026-07-13  
+서비스명: Mydata Team Bookkeeping  
+저장소: `283214-max/team_Bookkeeping`  
+운영 배포: Vercel + Supabase Postgres + Supabase Storage
 
 ---
 
-## 1단계. 요구사항 분석
+## 1. 프로젝트 개요
 
-### 서비스 목적
+Mydata Team Bookkeeping은 팀 내부 식당 비용을 식당별 잔액 기준으로 관리하는 웹앱이다. 팀원이 식당에서 사용한 금액과 장부 사진을 등록하면 해당 식당의 잔액에서 자동 차감되고, 관리자는 식당 생성, 삭제, 추가 결재 금액 반영, 잔액 조정, 사용자 승인/권한 관리를 수행한다.
 
-팀 가계부 웹앱은 팀이 식당별로 배정한 예산과 잔액을 투명하게 관리하기 위한 내부 업무 도구다. 팀원이 식당에서 금액을 사용하면 해당 식당의 잔액이 차감되고, 관리자는 식당별 예산을 추가하거나 잔액을 조정할 수 있다. 모든 잔액 변경은 거래 이력으로 남겨 추후 정산, 감사, 오류 확인이 가능해야 한다.
+현재 구현은 Next.js 단일 앱 구조이며, Vercel 서버리스 환경에서 API Route를 통해 Supabase Postgres와 Supabase Storage를 사용한다. 로컬 개발 환경에서는 Supabase 환경변수가 없을 때 `.data` 기반 로컬 파일 DB/스토리지를 fallback으로 사용한다.
 
-### 사용자 역할
+### 핵심 목표
+
+- 식당별 잔액과 사용 내역을 한 화면에서 빠르게 확인한다.
+- 팀원이 금액과 장부 사진만 등록하면 잔액 차감과 이력 저장이 함께 처리된다.
+- 관리자는 가입 승인번호, 사용자 권한, 식당, 추가 결재 금액을 직접 관리한다.
+- 모든 금액 변경은 `transactions` 이력으로 남기고, 현재 잔액은 `restaurant_balances`에 반영한다.
+
+---
+
+## 2. 사용자 역할
 
 | 역할 | 설명 | 주요 권한 |
 |---|---|---|
-| 관리자 | 팀 예산을 관리하는 사용자 | 식당 생성/수정, 금액 추가, 잔액 조정, 전체 이력 조회, 사용자 권한 관리 |
-| 팀원 | 식당 사용 금액을 등록하고 조회하는 사용자 | 식당 목록 조회, 잔액 조회, 사용 내역 등록, 본인 사용 내역 조회 |
+| 관리자 | 팀 비용과 사용자를 관리하는 사용자 | 대시보드 조회, 식당 추가/삭제, 추가 결재 금액 반영, 잔액 조정, 전체 거래 조회, 사용자 권한 변경, 사용자 삭제, 가입 승인번호 변경 |
+| 팀원 | 본인의 식당 사용 내역을 등록하는 사용자 | 대시보드 조회, 식당 조회, 사용 내역 등록, 장부 사진 첨부, 본인이 등록한 사용 내역 취소 |
 
-### 핵심 기능
+### 계정 상태
 
-| 기능 | 설명 | 대상 권한 |
-|---|---|---|
-| 식당별 잔액 관리 | 식당마다 현재 잔액, 누적 추가 금액, 누적 사용 금액을 관리 | 관리자, 팀원 조회 |
-| 사용 내역 기록 | 팀원이 식당, 금액, 사용일, 메모를 입력하면 잔액 차감 | 관리자, 팀원 |
-| 금액 추가 | 관리자가 특정 식당에 예산을 추가 | 관리자 |
-| 잔액 조정 | 관리자가 오류 정정, 정산 반영 등을 위해 잔액을 증감 | 관리자 |
-| 권한 관리 | 사용자 역할을 관리자 또는 팀원으로 지정 | 관리자 |
-| 조회 기능 | 식당별 잔액, 거래 이력, 기간별 사용 내역 조회 | 관리자 전체, 팀원 제한 조회 |
+- `ACTIVE`: 로그인 가능
+- `INACTIVE`: 로그인 불가
 
-### 부가 기능
-
-| 기능 | 설명 | 우선순위 |
-|---|---|---|
-| 잔액 부족 알림 | 식당 잔액이 기준 이하일 때 관리자에게 표시 | 중 |
-| 엑셀/CSV 내보내기 | 월별 사용 내역 다운로드 | 중 |
-| 영수증 첨부 | 사용 내역에 이미지 첨부 | 하 |
-| 승인 워크플로 | 팀원 등록 후 관리자 승인 시 차감 | 하 |
-| 다중 팀 지원 | 여러 팀이 같은 시스템을 분리 사용 | 하 |
-
-### 주요 정책
-
-- 금액 단위는 원화 기준 정수 `KRW`로 저장한다.
-- 잔액이 부족하면 사용 내역 등록을 거절한다.
-- 잔액 변경은 `transactions` 원장에 반드시 기록한다.
-- 현재 잔액은 조회 성능을 위해 `restaurant_balances`에 스냅샷으로 보관한다.
-- 거래 이력은 삭제하지 않고 취소 또는 반대 거래로 정정한다.
+관리자가 사용자를 삭제하면 실제 레코드는 감사 추적을 위해 유지하되 `INACTIVE` 처리한다. 동시에 이메일은 `{userId}@deleted.local` 형태로 tombstone 처리하여 같은 이메일로 다시 회원가입할 수 있게 한다.
 
 ---
 
-## 2단계. 추천 기술스택 제안
+## 3. 현재 기술 스택
 
-공식 문서 기준으로 Next.js는 React 기반 풀스택 웹앱 개발을 지원하고, Supabase Auth는 인증/인가와 Postgres 연동을 제공한다. 운영형 구조에서는 NestJS Guard 기반 인가와 Prisma 트랜잭션을 활용하면 API 계층과 데이터 무결성을 더 명확히 분리할 수 있다.
-
-### 옵션 A. 간단한 MVP용 스택
-
-| 영역 | 추천 | 이유 |
+| 영역 | 선택 기술 | 현재 사용 목적 |
 |---|---|---|
-| 프론트엔드 | Next.js App Router, TypeScript, Tailwind CSS | 화면, 라우팅, 서버 연동을 한 프로젝트에서 빠르게 개발 |
-| 백엔드 | Next.js Route Handlers 또는 Server Actions | 별도 API 서버 없이 MVP 구현 가능 |
-| 데이터베이스 | Supabase PostgreSQL | 관리형 DB, 백업, 콘솔, SQL 편집기 제공 |
-| 인증 | Supabase Auth | 이메일 로그인, OAuth, JWT, RLS 연동이 빠름 |
-| 배포 | Vercel + Supabase | 내부용 서비스의 초기 배포와 운영 부담이 작음 |
-| 상태 관리 | TanStack Query, React Hook Form, Zod | 서버 상태 캐싱, 폼 검증, 타입 안정성 |
+| 프론트엔드 | Next.js 16 App Router, React 19, TypeScript | 단일 페이지 앱 UI와 API Route 통합 |
+| 스타일 | CSS Modules가 아닌 전역 CSS, Apple.com 참고 디자인 톤 | 밝은 배경, 넓은 여백, 선명한 숫자 중심 화면 |
+| 백엔드 | Next.js Route Handlers | 로그인, 회원가입, 식당, 거래, 사용자, 설정 API |
+| DB | Supabase Postgres | 사용자, 식당, 잔액, 거래, 감사 로그, 앱 설정 저장 |
+| ORM/마이그레이션 | Drizzle ORM, drizzle-kit | Postgres 스키마 정의와 마이그레이션 |
+| 파일 저장소 | Supabase Storage | 장부 사진, 사용자 프로필 사진 저장 |
+| 배포 | Vercel | Next.js 앱 운영 배포 |
+| 로컬 fallback | `.data/team-budget-local-db.json`, `.data/storage` | Supabase 미설정 시 로컬 개발용 저장소 |
 
-추천 상황: 1~2명이 빠르게 만들고, 팀 내부 사용자가 적으며, 기능 범위가 잔액/이력/권한 관리 중심일 때.
+### 필수 환경변수
 
-### 옵션 B. 확장 가능한 운영용 스택
-
-| 영역 | 추천 | 이유 |
-|---|---|---|
-| 프론트엔드 | Next.js, TypeScript, Tailwind CSS | MVP와 동일한 UX 자산 재사용 가능 |
-| 백엔드 | NestJS REST API | 모듈, Guard, Pipe, Service 구조로 도메인 분리 용이 |
-| 데이터베이스 | PostgreSQL | 거래 원장, 트랜잭션, 잠금, 집계에 적합 |
-| ORM | Prisma | 타입 안정성, 마이그레이션, 트랜잭션 API 활용 |
-| 인증 | Auth.js, Supabase Auth, Auth0, Keycloak 중 택1 | 조직 인증 방식에 따라 선택 가능 |
-| 배포 | Docker + Fly.io/Render/Cloud Run/AWS ECS + Managed PostgreSQL | 트래픽 증가, 백엔드 분리, 운영 관측성 확보 |
-| 운영 | GitHub Actions, Sentry, OpenTelemetry, DB 백업 | 장애 대응과 변경 추적에 유리 |
-
-추천 상황: 사용자 수 증가, 감사 요구, 승인 프로세스, 다중 팀, 사내 SSO 연동 가능성이 있을 때.
-
----
-
-## 3단계. Guide 문서
-
-### 프로젝트 개요
-
-팀 가계부 웹앱은 식당별 예산 잔액을 기준으로 팀 지출을 기록하는 내부 웹 서비스다. 핵심 도메인은 `사용자`, `식당`, `잔액`, `거래` 네 가지이며, 잔액 변경은 항상 거래 원장을 통해 발생한다.
-
-### 제품 및 디자인 방향
-
-Apple.com의 디자인을 참고하되, 브랜드 요소나 화면 구성을 그대로 복제하지 않는다. 참고 범위는 얇고 정돈된 내비게이션, 넓은 여백, 명확한 시각 계층, 짧은 문장, 핵심 액션을 바로 찾을 수 있는 화면 구성이다. 이 서비스는 내부 업무앱이므로 마케팅형 랜딩 페이지가 아니라 로그인 후 대시보드가 첫 화면이 되어야 한다.
-
-| 디자인 원칙 | 적용 방향 |
-|---|---|
-| 콘텐츠 우선 | 첫 화면에서 총 잔액, 잔액 부족 식당, 최근 거래가 즉시 보여야 한다. |
-| 절제된 시각 요소 | 과한 장식, 큰 히어로 이미지, 불필요한 설명 문구를 피하고 데이터 밀도를 유지한다. |
-| 명확한 액션 | `사용 등록`, `금액 추가`, `거래 내역` 같은 핵심 액션을 화면 상단 또는 식당 상세 상단에 배치한다. |
-| 넓은 여백과 정렬 | 주요 섹션은 충분한 여백을 두되, 테이블과 폼은 업무용으로 빠르게 스캔 가능하게 구성한다. |
-| 짧은 카피 | 버튼과 안내 문구는 짧고 직접적으로 작성한다. 예: `사용 등록`, `금액 추가`, `잔액 조정`. |
-| 신뢰감 있는 피드백 | 잔액 차감, 추가, 오류, 권한 제한을 색상과 메시지로 즉시 알려준다. |
-| 접근성 | 색상만으로 상태를 구분하지 않고 라벨, 아이콘, 텍스트를 함께 제공한다. |
-
-### 주요 기능
-
-| 분류 | 기능 | 설명 |
-|---|---|---|
-| 인증 | 로그인/로그아웃 | 이메일 또는 조직 계정으로 로그인 |
-| 대시보드 | 전체 잔액 요약 | 총 잔액, 식당별 잔액, 최근 사용 내역 표시 |
-| 식당 관리 | 식당 생성/수정/비활성화 | 관리자가 예산 관리 대상 식당을 관리 |
-| 잔액 관리 | 현재 잔액 조회 | 식당별 사용 가능 금액 표시 |
-| 사용 등록 | 사용 금액 차감 | 팀원이 금액을 등록하면 잔액에서 차감 |
-| 금액 추가 | 예산 충전 | 관리자가 식당별 금액 추가 |
-| 조정 | 잔액 증감 조정 | 오류 정정 또는 정산 반영 |
-| 이력 조회 | 거래 목록 조회 | 기간, 식당, 유형, 사용자 기준 필터링 |
-
-### 사용자 권한
-
-| 행위 | 관리자 | 팀원 |
-|---|---:|---:|
-| 로그인 | 가능 | 가능 |
-| 식당 목록/상세 조회 | 가능 | 가능 |
-| 사용 내역 등록 | 가능 | 가능 |
-| 금액 추가/잔액 조정 | 가능 | 불가 |
-| 식당 생성/수정 | 가능 | 불가 |
-| 전체 사용자 이력 조회 | 가능 | 제한 |
-| 사용자 역할 변경 | 가능 | 불가 |
-
-### 화면 흐름
-
-```text
-로그인
-  -> 대시보드
-      -> 식당 목록
-          -> 식당 상세
-              -> 사용 내역 등록
-              -> 거래 이력 조회
-              -> 관리자 금액 추가/조정
-      -> 전체 사용 내역
-      -> 관리자 사용자/식당 관리
+```bash
+DATABASE_URL="postgres://..."
+SUPABASE_URL="https://your-project-ref.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
+SUPABASE_STORAGE_BUCKET="receipts"
 ```
 
-### 데이터 흐름
-
-```text
-1. 사용자가 로그인하고 JWT 또는 세션을 발급받는다.
-2. 프론트엔드는 대시보드 진입 시 식당 목록, 잔액, 최근 거래를 조회한다.
-3. 팀원이 사용 금액을 등록하면 백엔드는 권한과 잔액을 검증한다.
-4. 백엔드는 DB 트랜잭션 안에서 restaurant_balances를 잠그거나 조건부 갱신한다.
-5. transactions에 거래 원장을 기록하고 restaurant_balances 스냅샷을 갱신한다.
-6. 프론트엔드는 관련 캐시를 무효화하고 최신 잔액과 이력을 다시 표시한다.
-```
-
-### 개발 및 운영 가이드
-
-- 개발 환경은 Node.js LTS, TypeScript, PostgreSQL 로컬 또는 Supabase 개발 프로젝트를 사용한다.
-- 환경 변수는 `DATABASE_URL`, `AUTH_SECRET`, `NEXT_PUBLIC_API_BASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`처럼 역할별로 분리한다.
-- DB 변경은 마이그레이션으로만 반영한다.
-- 금액 변경 API는 반드시 서버에서 권한, 입력값, 현재 잔액을 재검증한다.
-- 배포 전 `lint`, `typecheck`, `test`, `migration dry-run`을 통과시킨다.
-- 운영에서는 일 단위 DB 백업, 관리자 권한 변경 감사 로그, 거래 실패 로그 모니터링을 적용한다.
-
-### 향후 확장 아이디어
-
-- 월별 예산 리셋 및 자동 이월
-- 사용 내역 승인 워크플로
-- 영수증 이미지 첨부 및 OCR
-- Slack/Teams 잔액 부족 알림
-- 다중 팀, 부서, 프로젝트별 예산 분리
-- 월별 리포트와 CSV 다운로드
+`DATABASE_URL`이 없으면 Vercel에서 API가 동작하지 않는다. Vercel Supabase 연동을 쓰는 경우 `POSTGRES_URL`, `POSTGRES_PRISMA_URL`, `POSTGRES_URL_NON_POOLING`도 fallback으로 읽는다.
 
 ---
 
-## 4단계. Front 문서
+## 4. 디자인 가이드
 
-### Apple.com 참고 디자인 시스템
+Apple.com을 참고하되, 마케팅 랜딩 페이지가 아니라 내부 운영 도구에 맞춘 절제된 인터페이스로 적용한다.
 
-Apple.com은 얇은 상단 내비게이션, 큰 주제 중심 섹션, 짧은 보조 문구, 명확한 CTA 링크, 이미지 중심의 시각적 초점을 사용한다. 팀 가계부 웹앱에서는 이를 업무용 UI에 맞게 변환해 `대시보드 중심`, `데이터 우선`, `절제된 액션` 패턴으로 적용한다.
+### 적용 원칙
 
-복제하지 않는 것:
+- 첫 화면은 `MYDATA TEAM`과 `Bookkeeping`을 중심에 배치한다.
+- 기본 로그인 역할은 팀원으로 선택한다.
+- 관리자/팀원 선택은 명확한 세그먼트 컨트롤로 제공한다.
+- 대시보드와 식당 화면은 카드 과잉을 피하고 숫자와 목록을 빠르게 스캔할 수 있게 구성한다.
+- 식당 선택 상태는 파란 테두리만 쓰지 않고 연한 하늘색 배경을 함께 사용한다.
+- 금액 입력은 사람이 읽기 쉽게 콤마를 표시하되 API/DB에는 숫자로 전송한다.
+- 알림은 모든 성공/오류 메시지를 5초 후 자동으로 닫는다.
+- 페이지나 탭을 이동했다가 돌아오면 입력 중이던 임시 폼 값은 초기화한다.
+- 새로고침 시에는 로그인 세션과 현재 화면 위치를 유지한다.
 
-- Apple 로고, 제품 이미지, 고유 카피, 브랜드 폰트, 아이콘을 사용하지 않는다.
-- 대형 마케팅 히어로를 앱 첫 화면으로 만들지 않는다.
-- 업무 화면을 장식용 카드와 이미지로 채우지 않는다.
+---
 
-적용하는 것:
+## 5. 주요 기능
 
-- 상단 내비게이션은 44~52px 높이의 얇은 바 형태로 구성한다.
-- 화면 배경은 밝은 중립색을 사용하고, 중요 데이터는 흰색 또는 아주 옅은 회색 표면 위에 배치한다.
-- 주요 수치에는 큰 숫자와 짧은 라벨을 사용한다.
-- 버튼은 핵심 액션 1개를 우선 강조하고, 보조 액션은 텍스트 버튼 또는 낮은 강조도로 둔다.
-- 상태 색상은 의미 중심으로 사용한다. 예: 추가는 녹색, 사용은 붉은색, 경고는 노란색, 일반 액션은 파란색.
+### 인증/회원가입
 
-### 디자인 토큰 예시
+- 로그인은 이메일과 이름을 입력해 처리한다.
+- 입력한 이메일과 이름이 DB의 활성 사용자 정보와 일치해야 로그인된다.
+- 회원가입은 이메일, 이름, 승인번호, 프로필 사진 또는 십이간지 기본 이미지를 입력한다.
+- 승인번호는 관리자만 관리 탭에서 변경할 수 있다.
+- 신규 가입자는 승인번호가 맞으면 생성되며, 관리자가 활성 사용자로 관리한다.
+- 프로필 사진을 직접 선택하면 기본 프로필 선택 버튼은 비활성화된다.
 
-| 항목 | 값 | 용도 |
-|---|---|---|
-| 기본 배경 | `#F5F5F7` | 전체 앱 배경 |
-| 표면 | `#FFFFFF` | 테이블, 폼, 요약 영역 |
-| 기본 텍스트 | `#1D1D1F` | 본문과 주요 숫자 |
-| 보조 텍스트 | `#6E6E73` | 설명, 메타 정보 |
-| 경계선 | `#D2D2D7` | 테이블 라인, 입력 필드 |
-| 기본 액션 | `#0071E3` | 주요 버튼, 링크 |
-| 성공 | `#248A3D` | 금액 추가, 정상 상태 |
-| 위험 | `#D70015` | 사용 차감, 오류 상태 |
-| 경고 | `#B25000` | 잔액 부족 주의 |
-| 카드 반경 | `8px` | 반복 카드와 패널 |
-| 기본 간격 | `8px` 기반 스케일 | `8`, `16`, `24`, `32`, `48` |
-| 글꼴 | system-ui 계열 | OS 기본 폰트 기반 가독성 |
+### 대시보드
 
-### 레이아웃 규칙
+- 전체 잔액과 전체 사용 금액을 보여준다.
+- 식당별 잔액은 높은 순으로 정렬한다.
+- 최근 거래를 표시한다.
+- 헤더명은 `마이데이터팀 가계부`를 사용한다.
 
-- 데스크톱은 최대 콘텐츠 폭 `1200px` 안에서 12컬럼 그리드를 사용한다.
-- 모바일은 하단 고정 액션보다 상단 주요 액션과 스티키 필터를 우선한다.
-- 대시보드는 한 화면에서 주요 잔액을 파악할 수 있게 `요약 -> 위험 항목 -> 최근 거래` 순서로 배치한다.
-- 테이블은 행 높이 48~56px, 숫자 컬럼 우측 정렬, 금액 변화는 부호와 색상을 함께 표시한다.
-- 모달은 금액 변경처럼 되돌리기 어려운 작업에만 사용하고, 일반 조회/필터는 인라인 패널로 처리한다.
-- 카드 안에 또 다른 카드를 중첩하지 않는다.
+### 식당 탭
 
-### 화면 목록 및 API 연동
+- Browse: 식당 목록, 검색, 잔액, 선택 상태 표시
+- Action: 선택 식당에 대해 사용 내역 등록 또는 관리자 금액 처리
+- Ledger: 선택 식당의 거래 상세 이력
 
-| 화면 | UI 구성 요소 | 사용자 액션 | API |
+팀원 Action은 항상 사용 금액 등록 화면으로 표시된다. 관리자는 추가 결재 금액 반영과 잔액 조정 기능을 사용할 수 있다.
+
+### 사용 내역 등록
+
+- 팀원은 금액, 사용일, 장부 사진을 등록한다.
+- 장부 사진이 없으면 저장하지 않고 `장부 사진을 첨부해주세요.` 알림을 띄운다.
+- 사용일은 미래 날짜를 선택할 수 없다.
+- 저장 클릭 시 `처리중입니다.` 알림을 띄운다.
+- 장부 사진은 브라우저에서 최대 1280px, JPEG 품질 0.72로 압축 후 업로드한다.
+- 저장 완료 후 파일 선택 상태와 미리보기는 초기화한다.
+- 저장 버튼 아래에 `계좌번호 농협 302-2112-3752-91 양승봉` 문구를 표시하고, 계좌번호 클릭 시 복사한다.
+
+### 관리자 기능
+
+- 식당 추가 시 초기 금액 입력은 콤마를 표시한다.
+- 같은 이름의 활성 식당이 있으면 새 식당 추가를 막는다.
+- 식당 삭제는 실제 삭제가 아니라 `INACTIVE` 처리한다.
+- 식당 상세 Action에서 추가 결재 금액을 반영할 수 있다.
+- 관리 탭에서 사용자별 사용 금액 합계를 볼 수 있다.
+- 사용자 역할 변경과 사용자 삭제가 가능하다.
+- 가입 승인번호를 변경할 수 있고, 변경 후 신규 가입자는 최신 승인번호만 사용할 수 있다.
+
+---
+
+## 6. 화면 흐름
+
+```text
+첫 화면
+  ├─ 로그인
+  │   └─ 대시보드
+  │       ├─ 식당 탭
+  │       │   ├─ Browse: 식당 선택/검색
+  │       │   ├─ Action: 사용 등록 또는 관리자 금액 처리
+  │       │   └─ Ledger: 거래 이력/장부 사진/본인 거래 취소
+  │       ├─ 거래 내역 탭
+  │       └─ 관리 탭(관리자 전용)
+  └─ 회원가입
+      ├─ 이름/이메일/승인번호
+      ├─ 프로필 사진 업로드 또는 십이간지 기본 이미지
+      └─ 가입 요청 완료
+```
+
+---
+
+## 7. 데이터 흐름
+
+### 사용 금액 등록
+
+```text
+1. 팀원이 식당, 금액, 사용일, 장부 사진을 입력한다.
+2. 프론트엔드가 장부 이미지를 압축한다.
+3. /api/restaurants/{id}/transactions/spend 로 multipart/form-data를 전송한다.
+4. 서버가 로그인 사용자, 식당 상태, 금액, 잔액, 이미지 형식을 검증한다.
+5. 장부 사진을 Supabase Storage에 업로드한다.
+6. DB 트랜잭션 안에서 restaurant_balances를 차감하고 transactions에 SPEND 이력을 남긴다.
+7. 프론트엔드는 응답받은 balance/transaction으로 화면 상태를 즉시 갱신한다.
+```
+
+### 추가 결재 금액 반영
+
+```text
+1. 관리자가 식당과 금액을 입력한다.
+2. /api/restaurants/{id}/transactions/top-up 으로 요청한다.
+3. 서버가 관리자 권한을 확인한다.
+4. DB 트랜잭션 안에서 잔액과 누적 추가 금액을 증가시키고 TOP_UP 거래를 저장한다.
+```
+
+### 사용자 삭제
+
+```text
+1. 관리자가 관리 탭에서 사용자를 삭제한다.
+2. 서버가 관리자 권한과 대상 사용자를 확인한다.
+3. users.status를 INACTIVE로 변경한다.
+4. users.email을 {userId}@deleted.local로 변경하여 원래 이메일 재가입을 허용한다.
+5. 기존 거래 이력은 user_id/user_name 기준으로 보존된다.
+```
+
+---
+
+## 8. 프론트엔드 문서
+
+### 화면 목록
+
+| 화면 | 주요 UI | 사용자 액션 | API 연동 |
 |---|---|---|---|
-| 로그인 | 이메일/비밀번호, OAuth 버튼, 오류 메시지 | 로그인, 로그아웃 | `POST /auth/login`, `POST /auth/logout` |
-| 대시보드 | 총 잔액 카드, 잔액 부족 식당, 최근 거래 테이블 | 식당 상세 이동, 기간 필터 | `GET /dashboard/summary`, `GET /transactions?limit=10` |
-| 식당 목록 | 검색, 상태 필터, 잔액 테이블, 식당 추가 버튼 | 검색, 상세 이동, 관리자 식당 추가 | `GET /restaurants`, `POST /restaurants` |
-| 식당 상세 | 식당 정보, 현재 잔액, 거래 이력, 액션 버튼 | 사용 등록, 금액 추가, 조정, 이력 필터 | `GET /restaurants/{id}`, `GET /restaurants/{id}/transactions` |
-| 사용 내역 등록 | 식당 선택, 금액 입력, 사용일, 메모 | 사용 금액 저장 | `POST /restaurants/{id}/transactions/spend` |
-| 관리자 금액 추가 | 식당 선택, 추가 금액, 사유 입력 | 예산 추가 저장 | `POST /restaurants/{id}/transactions/top-up` |
-| 관리자 잔액 조정 | 조정 금액, 조정 사유, 확인 모달 | 잔액 증감 조정 | `POST /restaurants/{id}/transactions/adjust` |
-| 이력 조회 | 기간 필터, 식당 필터, 유형 필터, 페이지네이션 | 검색, CSV 다운로드 | `GET /transactions`, `GET /transactions/export` |
-| 사용자 관리 | 사용자 목록, 역할 선택, 상태 변경 | 권한 변경, 비활성화 | `GET /users`, `PATCH /users/{id}/role` |
+| 로그인 | 이메일, 이름, 역할 선택, 로그인 버튼, 회원가입 버튼 | 이메일/이름 입력, 팀원/관리자 선택, 로그인 | `POST /api/auth/login` |
+| 회원가입 | 이름, 이메일, 승인번호, 프로필 사진, 십이간지 기본 이미지 | 가입 요청, 기본 사진 선택, 사진 업로드 | `POST /api/auth/signup` |
+| 대시보드 | 총 잔액, 총 사용액, 식당별 잔액, 최근 거래 | 요약 확인, 식당 선택 이동 | `GET /api/dashboard/summary` |
+| 식당 Browse | 식당 검색, 식당 목록, 잔액 카드, 삭제 버튼(관리자) | 식당 선택, 식당 삭제 | `GET /api/restaurants`, `DELETE /api/restaurants/{id}` |
+| 식당 Action - 팀원 | 금액, 사용일, 장부 사진, 계좌 복사 | 사용 내역 등록 | `POST /api/restaurants/{id}/transactions/spend` |
+| 식당 Action - 관리자 | 금액, 추가 결재, 잔액 조정 | 금액 추가/조정 | `POST /api/restaurants/{id}/transactions/top-up`, `POST /api/restaurants/{id}/transactions/adjust` |
+| 식당 Ledger | 식당별 거래 목록, 장부 사진 보기, 본인 거래 취소 | 장부 사진 열기, 본인 거래 취소 | `GET /api/restaurants/{id}/transactions`, `GET /api/transactions/{id}/receipt`, `POST /api/transactions/{id}/void` |
+| 거래 내역 | 전체 거래 목록, 필터 | 전체 이력 조회 | `GET /api/transactions` |
+| 관리 | 사용자 목록, 역할 변경, 사용자 삭제, 사용자별 사용 합계, 승인번호 변경 | 권한 수정, 사용자 삭제, 승인번호 저장 | `GET /api/users`, `PATCH /api/users/{id}/role`, `DELETE /api/users/{id}`, `GET/PUT /api/settings/signup-approval-code` |
 
-### 화면별 디자인 적용
+### 상태 관리
 
-| 화면 | Apple식 해석 | 적용 상세 |
-|---|---|---|
-| 로그인 | 단일 초점 | 중앙 정렬 폼, 짧은 서비스명, 보조 설명 최소화 |
-| 대시보드 | 주제 중심 섹션 | 첫 섹션에 `총 잔액`을 큰 숫자로 표시하고, 바로 아래 잔액 부족 식당을 노출 |
-| 식당 목록 | 정돈된 탐색 | 얇은 상단 필터, 검색, 정렬 가능한 테이블, 상태 배지 |
-| 식당 상세 | 핵심 대상 강조 | 식당명, 현재 잔액, 주요 액션을 상단에 고정하고 이력은 아래 배치 |
-| 사용 내역 등록 | 빠른 작업 | 금액 입력을 가장 크게 배치하고 식당/날짜/메모는 보조 필드로 구성 |
-| 관리자 금액 추가 | 신뢰와 확인 | 변경 전 잔액, 추가 금액, 변경 후 예상 잔액을 한 줄 흐름으로 표시 |
-| 거래 이력 | 스캔 가능성 | 거래 유형, 금액 변화, 사용자, 일시를 고정 컬럼 순서로 유지 |
+현재는 별도 상태 관리 라이브러리 없이 `app/page.tsx`에서 React state로 관리한다.
 
-### 상태 관리 방식
+- 세션 상태: 로그인 사용자, 현재 탭, 선택 식당
+- 서버 데이터 상태: 대시보드 요약, 식당 목록, 거래 목록, 사용자 목록
+- 임시 입력 상태: 로그인/회원가입 폼, 식당 생성 폼, 금액 입력, 사용일, 이미지 파일
+- 새로고침 유지: 로그인 세션과 현재 화면은 브라우저 저장소 기반으로 유지
+- 화면 이동 초기화: 탭/페이지 전환 시 입력 중인 폼 값은 초기화
 
-| 상태 유형 | 추천 방식 | 예시 |
-|---|---|---|
-| 서버 상태 | TanStack Query 또는 Next.js 서버 데이터 패칭 | 식당 목록, 잔액, 거래 이력 |
-| 폼 상태 | React Hook Form + Zod | 사용 등록, 금액 추가, 로그인 |
-| 전역 UI 상태 | Zustand 또는 React Context | 사이드바 열림, 필터 기본값 |
-| 인증 상태 | Auth Provider 세션 | 현재 사용자, 역할, 토큰 |
-| 캐시 정책 | mutation 성공 후 관련 query invalidate | 사용 등록 후 식당 상세/대시보드 갱신 |
+규모가 커질 경우 TanStack Query를 도입해 서버 상태 캐싱, optimistic update, 재시도 정책을 분리하는 것이 좋다.
 
-### 폴더 구조 예시
+### 주요 폴더 구조
 
 ```text
-src/
-  app/
-    (auth)/login/page.tsx
-    (app)/dashboard/page.tsx
-    (app)/restaurants/page.tsx
-    (app)/restaurants/[id]/page.tsx
-    (app)/transactions/page.tsx
-    (admin)/admin/users/page.tsx
-  features/
-    auth/
-    restaurants/
-    balances/
-    transactions/
-    users/
-  components/
-    ui/
-    layout/
-  lib/
-    api-client.ts
-    auth.ts
-    validators.ts
-  types/
-    api.ts
+app/
+  api/                         Next.js Route Handlers
+  page.tsx                     클라이언트 UI와 화면 상태
+  globals.css                  전역 디자인 스타일
+db/
+  index.ts                     Supabase Postgres/Storage 연결과 로컬 fallback
+  local.ts                     로컬 파일 DB/스토리지 구현
+  schema.ts                    Drizzle Postgres 스키마
+drizzle-postgres/
+  0000_pink_sunspot.sql        Supabase Postgres 마이그레이션
+lib/team-budget/
+  errors.ts                    API 오류 포맷
+  http.ts                      요청 파싱/금액 파싱/공통 핸들러
+  store.ts                     비즈니스 로직과 DB 트랜잭션
+  types.ts                     공통 타입
+public/
+  ...                          정적 자산
 ```
-
-### 프론트엔드 구현 원칙
-
-- 금액 입력은 숫자만 허용하고 천 단위 구분 표시를 적용한다.
-- 잔액 부족 오류는 폼 상단과 금액 필드에 동시에 표시한다.
-- 관리자 전용 버튼은 권한이 없으면 렌더링하지 않는다.
-- 거래 저장 버튼은 중복 클릭 방지를 위해 요청 중 비활성화한다.
-- 모바일에서도 식당 목록과 사용 등록이 빠르게 가능하도록 주요 액션을 상단에 배치한다.
-- 화면 제목은 짧게 유지하고, 설명 문구보다 실제 잔액과 거래 데이터를 먼저 보여준다.
-- 상단 내비게이션은 얇고 일관되게 유지하며, 현재 위치와 사용자 역할만 명확히 표시한다.
-- 주요 액션 버튼은 화면당 1개를 원칙으로 하고, 나머지는 보조 버튼 또는 메뉴로 낮춘다.
-- 금액 변화는 `+50,000원`, `-12,000원`처럼 부호를 붙이고 색상과 라벨을 함께 제공한다.
-- 애니메이션은 페이지 전환보다 저장 완료, 오류, 필터 적용 같은 상태 피드백에만 짧게 사용한다.
 
 ---
 
-## 5단계. Backend 문서
+## 9. 백엔드 API 문서
 
-### 인증/인가 구조
+공통 응답 오류 형식:
 
-- 인증은 JWT 또는 서버 세션 기반으로 처리한다.
-- 모든 API는 인증 미들웨어를 통과해야 하며, 공개 API는 로그인/헬스체크 정도로 제한한다.
-- 사용자 역할은 `users.role`의 `ADMIN`, `MEMBER`로 관리한다.
-- 백엔드에서는 라우트별 권한을 Guard 또는 Middleware로 검증한다.
-- 프론트엔드의 버튼 숨김은 UX일 뿐이며, 실제 권한 검증은 반드시 백엔드에서 수행한다.
+```json
+{
+  "code": "VALIDATION_ERROR",
+  "message": "오류 메시지",
+  "details": {}
+}
+```
 
-### API 설계
+### 인증/세션
 
 | Method | URL | Request | Response | 권한 |
 |---|---|---|---|---|
-| `POST` | `/auth/login` | `{ email, password }` | `{ accessToken, user }` | 공개 |
-| `POST` | `/auth/logout` | 없음 | `{ success }` | 로그인 |
-| `GET` | `/me` | 없음 | `{ id, email, name, role }` | 로그인 |
-| `GET` | `/dashboard/summary` | `from?, to?` | `{ totalBalance, restaurants, recentTransactions }` | 로그인 |
-| `GET` | `/restaurants` | `q?, status?, page?` | `{ items, total }` | 로그인 |
-| `POST` | `/restaurants` | `{ name, category?, initialAmount? }` | `{ restaurant }` | 관리자 |
-| `GET` | `/restaurants/{id}` | 없음 | `{ restaurant, balance }` | 로그인 |
-| `PATCH` | `/restaurants/{id}` | `{ name?, category?, status? }` | `{ restaurant }` | 관리자 |
-| `GET` | `/restaurants/{id}/balance` | 없음 | `{ restaurantId, currentAmount, updatedAt }` | 로그인 |
-| `GET` | `/restaurants/{id}/transactions` | `type?, from?, to?, page?` | `{ items, total }` | 로그인 |
-| `POST` | `/restaurants/{id}/transactions/spend` | `{ amount, usedAt, memo?, idempotencyKey }` | `{ transaction, balance }` | 로그인 |
-| `POST` | `/restaurants/{id}/transactions/top-up` | `{ amount, memo, idempotencyKey }` | `{ transaction, balance }` | 관리자 |
-| `POST` | `/restaurants/{id}/transactions/adjust` | `{ amountDelta, memo, idempotencyKey }` | `{ transaction, balance }` | 관리자 |
-| `GET` | `/transactions` | `restaurantId?, userId?, type?, from?, to?, page?` | `{ items, total }` | 관리자 전체, 팀원 제한 |
-| `POST` | `/transactions/{id}/void` | `{ reason, idempotencyKey }` | `{ reversalTransaction, balance }` | 관리자 |
-| `GET` | `/users` | `q?, role?, status?` | `{ items, total }` | 관리자 |
-| `PATCH` | `/users/{id}/role` | `{ role }` | `{ user }` | 관리자 |
+| GET | `/api/me` | 없음 | `{ "user": User \| null }` | 전체 |
+| POST | `/api/auth/login` | `{ "email": string, "name": string }` | `{ "user": User }` | 전체 |
+| POST | `/api/auth/logout` | 없음 | `{ "ok": true }` | 로그인 |
+| POST | `/api/auth/signup` | `multipart/form-data` 또는 JSON: `name`, `email`, `approvalCode`, `avatar`, `avatarPreset` | `{ "user": User }` | 전체 |
 
-### 주요 Request/Response 예시
+로그인은 비밀번호가 아니라 이메일과 이름 일치 여부로 처리한다. 운영 보안 수준을 높이려면 Supabase Auth, 사내 SSO, OTP 중 하나를 추가해야 한다.
 
-```json
-{
-  "amount": 25000,
-  "usedAt": "2026-07-02",
-  "memo": "점심 식대",
-  "idempotencyKey": "client-generated-uuid"
-}
-```
+### 대시보드/식당
 
-```json
-{
-  "transaction": {
-    "id": "uuid",
-    "type": "SPEND",
-    "amountDelta": -25000,
-    "balanceBefore": 100000,
-    "balanceAfter": 75000
-  },
-  "balance": {
-    "restaurantId": "uuid",
-    "currentAmount": 75000
-  }
-}
-```
+| Method | URL | Request | Response | 권한 |
+|---|---|---|---|---|
+| GET | `/api/dashboard/summary` | 없음 | `DashboardSummary` | 로그인 |
+| GET | `/api/restaurants` | query: `q`, `status` | `RestaurantListItem[]` | 로그인 |
+| POST | `/api/restaurants` | `{ "name": string, "initialAmount": number, "memo"?: string, "lowBalanceThreshold"?: number }` | `RestaurantListItem` | 관리자 |
+| GET | `/api/restaurants/{id}` | 없음 | `RestaurantListItem` | 로그인 |
+| PATCH | `/api/restaurants/{id}` | `{ "name"?, "memo"?, "lowBalanceThreshold"? }` | `Restaurant` | 관리자 |
+| DELETE | `/api/restaurants/{id}` | 없음 | `{ "restaurant": Restaurant }` | 관리자 |
+| GET | `/api/restaurants/{id}/balance` | 없음 | `Balance` | 로그인 |
 
-### 에러 처리 정책
+활성 식당 이름은 중복 등록을 막는다. 식당 삭제는 `INACTIVE` soft delete로 처리한다.
 
-| HTTP Status | 코드 | 상황 |
-|---:|---|---|
-| 400 | `VALIDATION_ERROR` | 금액이 0 이하, 필수값 누락, 날짜 형식 오류 |
-| 401 | `UNAUTHORIZED` | 로그인하지 않음 또는 토큰 만료 |
-| 403 | `FORBIDDEN` | 관리자 권한 필요 |
-| 404 | `NOT_FOUND` | 식당, 사용자, 거래 없음 |
-| 409 | `INSUFFICIENT_BALANCE` | 잔액 부족 |
-| 409 | `IDEMPOTENCY_CONFLICT` | 같은 키로 다른 요청 재시도 |
-| 423 | `BALANCE_LOCKED` | 잔액 갱신 충돌 재시도 초과 |
-| 500 | `INTERNAL_ERROR` | 서버 내부 오류 |
+### 거래
 
-공통 에러 응답:
+| Method | URL | Request | Response | 권한 |
+|---|---|---|---|---|
+| GET | `/api/transactions` | query: `restaurantId`, `type`, `userId` | `LedgerTransaction[]` | 로그인 |
+| GET | `/api/restaurants/{id}/transactions` | 없음 | `LedgerTransaction[]` | 로그인 |
+| POST | `/api/restaurants/{id}/transactions/spend` | `multipart/form-data`: `amount`, `usedAt`, `idempotencyKey`, `receipt` | `TransactionMutationResult` | 로그인 |
+| POST | `/api/restaurants/{id}/transactions/top-up` | `{ "amount": number, "memo"?, "idempotencyKey": string }` | `TransactionMutationResult` | 관리자 |
+| POST | `/api/restaurants/{id}/transactions/adjust` | `{ "amountDelta": number, "memo"?, "idempotencyKey": string }` | `TransactionMutationResult` | 관리자 |
+| POST | `/api/transactions/{id}/void` | `{ "idempotencyKey": string }` | `TransactionMutationResult` | 관리자 또는 본인 SPEND |
+| GET | `/api/transactions/{id}/receipt` | 없음 | 이미지 파일 응답 | 로그인 |
 
-```json
-{
-  "code": "INSUFFICIENT_BALANCE",
-  "message": "잔액이 부족합니다.",
-  "details": {
-    "currentAmount": 10000,
-    "requestedAmount": 25000
-  }
-}
-```
+`SPEND`는 음수 `amountDelta`, `TOP_UP`은 양수 `amountDelta`, `ADJUST`는 양수/음수 모두 가능하다. 취소는 기존 거래를 삭제하지 않고 `REVERSAL` 거래를 추가한다.
 
-### 트랜잭션 처리 방식
+### 사용자/설정
 
-- 사용 등록, 금액 추가, 잔액 조정, 거래 취소는 반드시 DB 트랜잭션으로 처리한다.
-- 처리 순서는 `잔액 행 잠금 또는 조건부 갱신 -> 거래 원장 insert -> 잔액 스냅샷 update -> commit`이다.
-- PostgreSQL 사용 시 `SELECT ... FOR UPDATE` 또는 `UPDATE ... WHERE current_amount >= amount` 방식으로 동시 차감을 방지한다.
-- ORM 사용 시 격리 수준은 중요 금액 변경 API에 한해 `Serializable` 또는 재시도 가능한 전략을 적용한다.
-- `idempotencyKey`를 저장해 사용자가 저장 버튼을 여러 번 눌러도 중복 차감되지 않게 한다.
+| Method | URL | Request | Response | 권한 |
+|---|---|---|---|---|
+| GET | `/api/users` | 없음 | `User[]`와 사용자별 사용 합계 | 관리자 |
+| PATCH | `/api/users/{id}/role` | `{ "role": "ADMIN" \| "MEMBER" }` | `User` | 관리자 |
+| DELETE | `/api/users/{id}` | 없음 | `User` | 관리자 |
+| GET | `/api/users/{id}/avatar` | 없음 | 이미지 파일 응답 | 로그인 |
+| GET | `/api/avatars/{preset}` | 없음 | SVG 이미지 응답 | 전체 |
+| GET | `/api/settings/signup-approval-code` | 없음 | `{ "approvalCode": string }` | 관리자 |
+| PUT | `/api/settings/signup-approval-code` | `{ "approvalCode": string }` | `{ "approvalCode": string }` | 관리자 |
 
 ---
 
-## 6단계. DB 문서
+## 10. 인증/인가 구조
 
-### 설계 원칙
+현재 인증은 앱 내부 사용자 테이블과 쿠키 기반 세션을 사용한다.
 
-- `transactions`는 잔액 변경의 원장이다.
-- `restaurant_balances`는 빠른 조회를 위한 현재 잔액 스냅샷이다.
-- 거래는 삭제하지 않는다. 정정은 반대 방향의 거래를 새로 만든다.
-- 금액 컬럼은 원화 정수 기준 `BIGINT`를 사용한다.
+- 로그인 성공 시 서버가 현재 사용자 정보를 세션으로 유지한다.
+- API는 `getCurrentUser(request)`로 로그인 여부를 확인한다.
+- 관리자 API는 `requireAdmin(request)`를 통해 `role === "ADMIN"`인지 확인한다.
+- 팀원은 본인의 `SPEND` 거래만 취소할 수 있고, 관리자 기능은 사용할 수 없다.
+- 삭제된 사용자는 `status = "INACTIVE"`이므로 로그인할 수 없다.
+
+운영 보안 강화 권장:
+
+- Supabase Auth 또는 사내 SSO 도입
+- 비밀번호/OTP/매직링크 중 하나 추가
+- 관리자 작업에 감사 로그 화면 추가
+- 세션 만료 시간과 재인증 정책 명확화
+
+---
+
+## 11. 트랜잭션/에러 처리 정책
+
+### 트랜잭션 처리
+
+잔액이 바뀌는 작업은 서버에서 DB 트랜잭션으로 처리한다.
+
+- 현재 잔액 조회
+- 잔액 부족 검증
+- `transactions` 삽입
+- `restaurant_balances` 갱신
+- 필요 시 `audit_logs` 삽입
+
+장부 사진 업로드가 포함된 `SPEND`는 파일 업로드 후 DB 트랜잭션을 수행한다. DB 저장 실패 시 업로드된 파일은 삭제를 시도한다.
+
+### 멱등성
+
+거래 API는 `idempotencyKey`를 받는다. 같은 키가 중복 요청되면 중복 거래가 생기지 않도록 `transactions.idempotency_key` unique 제약으로 보호한다.
+
+### 에러 정책
+
+| 코드 | HTTP | 의미 |
+|---|---:|---|
+| `VALIDATION_ERROR` | 400 | 필수값 누락, 금액 형식 오류, 이미지 형식 오류 |
+| `UNAUTHORIZED` | 401 | 로그인 필요 |
+| `FORBIDDEN` | 403 | 관리자 권한 필요 또는 본인 거래가 아님 |
+| `NOT_FOUND` | 404 | 식당, 사용자, 거래, 장부 사진 없음 |
+| `CONFLICT` | 409 | 중복 식당명, 중복 활성 이메일, 멱등성 충돌 |
+| `INTERNAL_SERVER_ERROR` | 500 | 예상하지 못한 서버 오류 |
+
+---
+
+## 12. DB 문서
 
 ### users
 
 | 컬럼 | 타입 | 설명 | 제약조건 |
 |---|---|---|---|
-| `id` | UUID | 사용자 ID | PK |
-| `email` | VARCHAR(255) | 로그인 이메일 | UNIQUE, NOT NULL |
-| `name` | VARCHAR(100) | 사용자명 | NOT NULL |
-| `role` | VARCHAR(20) | `ADMIN`, `MEMBER` | NOT NULL |
-| `status` | VARCHAR(20) | `ACTIVE`, `INACTIVE` | NOT NULL |
-| `auth_provider_user_id` | VARCHAR(255) | 외부 인증 사용자 ID | UNIQUE, NULL |
-| `created_at` | TIMESTAMPTZ | 생성일 | NOT NULL |
-| `updated_at` | TIMESTAMPTZ | 수정일 | NOT NULL |
+| `id` | text | 사용자 ID | PK |
+| `email` | text | 이메일 | NOT NULL, UNIQUE |
+| `name` | text | 이름 | NOT NULL |
+| `role` | text | `ADMIN`, `MEMBER` | NOT NULL, CHECK |
+| `status` | text | `ACTIVE`, `INACTIVE` | NOT NULL, CHECK |
+| `auth_provider_user_id` | text | 외부 인증 사용자 ID | UNIQUE, nullable |
+| `avatar_object_key` | text | Supabase Storage 프로필 이미지 key | nullable |
+| `avatar_file_name` | text | 원본 파일명 | nullable |
+| `avatar_content_type` | text | MIME type | nullable |
+| `avatar_size` | integer | 파일 크기 | `>= 0`, nullable |
+| `avatar_preset` | text | 십이간지 기본 프로필 키 | nullable |
+| `created_at` | text | 생성일시 | NOT NULL |
+| `updated_at` | text | 수정일시 | NOT NULL |
 
 ### restaurants
 
 | 컬럼 | 타입 | 설명 | 제약조건 |
 |---|---|---|---|
-| `id` | UUID | 식당 ID | PK |
-| `name` | VARCHAR(120) | 식당명 | NOT NULL |
-| `category` | VARCHAR(50) | 한식, 중식 등 | NULL |
-| `status` | VARCHAR(20) | `ACTIVE`, `INACTIVE` | NOT NULL |
-| `memo` | TEXT | 관리자 메모 | NULL |
-| `created_by` | UUID | 생성 관리자 | FK users.id |
-| `created_at` | TIMESTAMPTZ | 생성일 | NOT NULL |
-| `updated_at` | TIMESTAMPTZ | 수정일 | NOT NULL |
+| `id` | text | 식당 ID | PK |
+| `name` | text | 식당명 | NOT NULL |
+| `category` | text | 카테고리 | nullable, 현재 UI에서는 숨김 |
+| `status` | text | `ACTIVE`, `INACTIVE` | NOT NULL, CHECK |
+| `memo` | text | 메모 | nullable |
+| `low_balance_threshold` | integer | 부족 잔액 기준 | NOT NULL, `>= 0` |
+| `created_by` | text | 생성 관리자 ID | FK users.id |
+| `created_at` | text | 생성일시 | NOT NULL |
+| `updated_at` | text | 수정일시 | NOT NULL |
 
 ### restaurant_balances
 
 | 컬럼 | 타입 | 설명 | 제약조건 |
 |---|---|---|---|
-| `restaurant_id` | UUID | 식당 ID | PK, FK restaurants.id |
-| `current_amount` | BIGINT | 현재 잔액 | NOT NULL, CHECK >= 0 |
-| `total_added_amount` | BIGINT | 누적 추가 금액 | NOT NULL, DEFAULT 0 |
-| `total_spent_amount` | BIGINT | 누적 사용 금액 | NOT NULL, DEFAULT 0 |
-| `version` | INTEGER | 낙관적 잠금 버전 | NOT NULL, DEFAULT 1 |
-| `last_transaction_id` | UUID | 마지막 거래 ID | FK transactions.id, NULL |
-| `updated_at` | TIMESTAMPTZ | 갱신일 | NOT NULL |
+| `restaurant_id` | text | 식당 ID | PK, FK restaurants.id |
+| `current_amount` | integer | 현재 잔액 | NOT NULL, `>= 0` |
+| `total_added_amount` | integer | 누적 추가 금액 | NOT NULL, `>= 0` |
+| `total_spent_amount` | integer | 누적 사용 금액 | NOT NULL, `>= 0` |
+| `version` | integer | 낙관적 잠금/변경 버전 | NOT NULL |
+| `last_transaction_id` | text | 마지막 거래 ID | nullable |
+| `updated_at` | text | 수정일시 | NOT NULL |
 
 ### transactions
 
 | 컬럼 | 타입 | 설명 | 제약조건 |
 |---|---|---|---|
-| `id` | UUID | 거래 ID | PK |
-| `restaurant_id` | UUID | 식당 ID | FK restaurants.id, NOT NULL |
-| `user_id` | UUID | 거래 생성 사용자 | FK users.id, NOT NULL |
-| `type` | VARCHAR(20) | `SPEND`, `TOP_UP`, `ADJUST`, `REVERSAL` | NOT NULL |
-| `amount_delta` | BIGINT | 잔액 변화량, 사용은 음수 | NOT NULL, CHECK != 0 |
-| `balance_before` | BIGINT | 변경 전 잔액 | NOT NULL, CHECK >= 0 |
-| `balance_after` | BIGINT | 변경 후 잔액 | NOT NULL, CHECK >= 0 |
-| `memo` | TEXT | 사용/추가/조정 사유 | NULL |
-| `used_at` | DATE | 실제 사용일 | NULL |
-| `idempotency_key` | VARCHAR(100) | 중복 요청 방지 키 | UNIQUE, NOT NULL |
-| `related_transaction_id` | UUID | 취소 대상 또는 관련 거래 | FK transactions.id, NULL |
-| `created_at` | TIMESTAMPTZ | 기록 생성일 | NOT NULL |
+| `id` | text | 거래 ID | PK |
+| `restaurant_id` | text | 식당 ID | FK restaurants.id |
+| `user_id` | text | 요청 사용자 ID | FK users.id |
+| `user_name` | text | 거래 당시 사용자명 | NOT NULL |
+| `type` | text | `SPEND`, `TOP_UP`, `ADJUST`, `REVERSAL` | NOT NULL, CHECK |
+| `amount_delta` | integer | 잔액 변화량 | NOT NULL, `!= 0` |
+| `balance_before` | integer | 거래 전 잔액 | NOT NULL, `>= 0` |
+| `balance_after` | integer | 거래 후 잔액 | NOT NULL, `>= 0` |
+| `memo` | text | 메모 | nullable |
+| `used_at` | text | 사용일 | nullable |
+| `idempotency_key` | text | 중복 요청 방지 키 | NOT NULL, UNIQUE |
+| `related_transaction_id` | text | 취소/반전 대상 거래 ID | FK transactions.id, nullable |
+| `receipt_object_key` | text | 장부 사진 Storage key | nullable |
+| `receipt_file_name` | text | 장부 사진 파일명 | nullable |
+| `receipt_content_type` | text | 장부 사진 MIME type | nullable |
+| `receipt_size` | integer | 장부 사진 크기 | `>= 0`, nullable |
+| `created_at` | text | 생성일시 | NOT NULL |
 
 ### audit_logs
 
 | 컬럼 | 타입 | 설명 | 제약조건 |
 |---|---|---|---|
-| `id` | UUID | 감사 로그 ID | PK |
-| `actor_user_id` | UUID | 행위자 | FK users.id |
-| `action` | VARCHAR(80) | 행위명 | NOT NULL |
-| `target_type` | VARCHAR(50) | 대상 유형 | NOT NULL |
-| `target_id` | UUID | 대상 ID | NULL |
-| `metadata` | JSONB | 변경 전후 정보 | NULL |
-| `created_at` | TIMESTAMPTZ | 생성일 | NOT NULL |
+| `id` | text | 감사 로그 ID | PK |
+| `actor_user_id` | text | 작업 사용자 ID | FK users.id, nullable |
+| `action` | text | 작업명 | NOT NULL |
+| `target_type` | text | 대상 타입 | NOT NULL |
+| `target_id` | text | 대상 ID | nullable |
+| `metadata` | text | JSON 문자열 메타데이터 | nullable |
+| `created_at` | text | 생성일시 | NOT NULL |
 
-### 인덱스
+### app_settings
 
-| 테이블 | 인덱스 | 목적 |
+| 컬럼 | 타입 | 설명 | 제약조건 |
+|---|---|---|---|
+| `key` | text | 설정 키 | PK |
+| `value` | text | 설정 값 | NOT NULL |
+| `updated_by` | text | 수정 관리자 ID | FK users.id, nullable |
+| `updated_at` | text | 수정일시 | NOT NULL |
+
+현재 사용하는 설정 키:
+
+| key | 기본값 | 설명 |
 |---|---|---|
-| `users` | `idx_users_email` | 로그인/사용자 검색 |
-| `restaurants` | `idx_restaurants_status_name` | 식당 목록 조회 |
-| `transactions` | `idx_transactions_restaurant_created` | 식당 상세 이력 조회 |
-| `transactions` | `idx_transactions_user_created` | 사용자별 사용 내역 조회 |
-| `transactions` | `idx_transactions_type_created` | 유형별/기간별 필터 |
-| `transactions` | `uq_transactions_idempotency_key` | 중복 차감 방지 |
+| `signup_approval_code` | `MYDATA2026` | 회원가입 승인번호 |
 
 ### ERD
 
 ```text
-users 1 ─── N restaurants.created_by
-users 1 ─── N transactions.user_id
-restaurants 1 ─── 1 restaurant_balances
-restaurants 1 ─── N transactions
-transactions 1 ─── N transactions.related_transaction_id
-users 1 ─── N audit_logs.actor_user_id
-```
+users 1 ── N restaurants.created_by
+users 1 ── N transactions.user_id
+users 1 ── N audit_logs.actor_user_id
+users 1 ── N app_settings.updated_by
 
-### 잔액 차감 SQL 흐름 예시
+restaurants 1 ── 1 restaurant_balances.restaurant_id
+restaurants 1 ── N transactions.restaurant_id
 
-```sql
-BEGIN;
-
-SELECT current_amount
-FROM restaurant_balances
-WHERE restaurant_id = :restaurant_id
-FOR UPDATE;
-
--- current_amount >= :amount 검증
-
-UPDATE restaurant_balances
-SET current_amount = current_amount - :amount,
-    total_spent_amount = total_spent_amount + :amount,
-    version = version + 1,
-    updated_at = NOW()
-WHERE restaurant_id = :restaurant_id;
-
-INSERT INTO transactions (
-  id, restaurant_id, user_id, type, amount_delta,
-  balance_before, balance_after, memo, used_at, idempotency_key, created_at
-) VALUES (
-  :id, :restaurant_id, :user_id, 'SPEND', -:amount,
-  :before, :after, :memo, :used_at, :idempotency_key, NOW()
-);
-
-COMMIT;
+transactions 1 ── N transactions.related_transaction_id
 ```
 
 ---
 
-## 7단계. 최종 통합 구현 기준
+## 13. Supabase Storage 문서
 
-### 용어 통일
+기본 bucket 이름은 `receipts`이며, 환경변수 `SUPABASE_STORAGE_BUCKET`으로 변경할 수 있다.
 
-| 용어 | 의미 |
-|---|---|
-| 식당 | 예산과 잔액을 관리하는 사용처 |
-| 잔액 | 식당에서 현재 사용할 수 있는 금액 |
-| 거래 | 잔액을 변경하는 모든 이벤트 |
-| 사용 | 팀원이 금액을 소비해 잔액을 차감하는 거래 |
-| 금액 추가 | 관리자가 식당 예산을 충전하는 거래 |
-| 조정 | 관리자가 정산/오류 수정을 위해 잔액을 증감하는 거래 |
+### 저장 대상
 
-### MVP 구현 순서
+| 대상 | key 패턴 | 설명 |
+|---|---|---|
+| 장부 사진 | `receipts/{transactionId}/{safeFileName}.jpg` | 사용 내역 등록 시 첨부 |
+| 프로필 사진 | `avatars/{userId}/{safeFileName}` | 회원가입 시 첨부 |
 
-1. 인증과 사용자 역할 모델을 구현한다.
-2. 식당 CRUD와 식당별 잔액 스냅샷을 구현한다.
-3. `transactions` 원장 기반 사용 등록과 금액 추가 API를 구현한다.
-4. 대시보드, 식당 목록, 식당 상세, 사용 등록 화면을 구현한다.
-5. 관리자 금액 추가/조정 화면과 사용자 관리 화면을 구현한다.
-6. 거래 이력 필터, 페이지네이션, CSV 다운로드를 추가한다.
-7. 테스트, 배포, 백업, 모니터링을 정리한다.
+Storage bucket이 없어서 업로드가 실패하는 경우 서버가 bucket 생성을 시도한 뒤 업로드를 재시도한다. 운영에서는 Supabase 콘솔에서 private bucket을 미리 생성하는 것을 권장한다.
 
-### 우선 구현 API
+### 파일 정책
 
-초기 릴리스에서는 `POST /auth/login`, `GET /me`, `GET /restaurants`, `GET /restaurants/{id}`, `POST /restaurants/{id}/transactions/spend`, `POST /restaurants/{id}/transactions/top-up`, `GET /transactions`를 먼저 구현한다.
+- 이미지 MIME type만 허용한다.
+- 파일명은 안전한 문자로 정리해 Supabase Storage key 오류를 막는다.
+- 장부 사진은 프론트에서 JPEG로 압축해 업로드한다.
+- 영수증 원본 화질 보존보다 업로드 속도와 저장 비용을 우선한다.
 
-### 테스트 전략
+---
 
-- 단위 테스트: 금액 검증, 권한 검증, 잔액 계산 로직
-- 통합 테스트: 사용 등록 시 잔액 차감과 거래 기록 원자성
-- 동시성 테스트: 같은 식당에 동시에 여러 사용 등록 요청
-- E2E 테스트: 로그인, 식당 조회, 사용 등록, 관리자 금액 추가
-- 회귀 테스트: 거래 취소 또는 조정 후 잔액 일관성
+## 14. 개발 및 운영 가이드
 
-### 참고한 공식 문서 및 디자인 레퍼런스
+### 로컬 실행
 
-- [Next.js Docs](https://nextjs.org/docs): React 기반 풀스택 웹앱, App Router, 데이터 패칭, Route Handlers 참고
-- [Supabase Auth Docs](https://supabase.com/docs/guides/auth): 인증/인가, JWT, RLS 연동 구조 참고
-- [NestJS Guards Docs](https://docs.nestjs.com/guards): 라우트 단위 인증/인가 Guard 구조 참고
-- [Prisma Transactions Docs](https://www.prisma.io/docs/orm/prisma-client/queries/transactions): 원자적 잔액 갱신, 격리 수준, 재시도 전략 참고
-- [Apple.com](https://www.apple.com/): 얇은 글로벌 내비게이션, 큰 주제 중심 섹션, 짧은 카피, 명확한 액션 배치 등 시각 방향 참고
+```bash
+npm install
+npm run dev
+```
+
+기본 개발 서버:
+
+```text
+http://127.0.0.1:3000
+```
+
+현재 Codex 작업 환경에서는 3001 포트를 사용할 수 있다.
+
+### 검증
+
+```bash
+npm run lint
+npm run build
+```
+
+### DB 마이그레이션
+
+스키마는 `db/schema.ts`, Postgres 마이그레이션은 `drizzle-postgres`에 있다.
+
+```bash
+npm run db:generate
+npm run db:migrate
+npm run db:studio
+```
+
+Supabase SQL Editor에서 직접 확인하거나 수정할 수도 있지만, 운영 구조 변경은 가능한 Drizzle migration으로 관리한다.
+
+### Vercel 배포 체크리스트
+
+- GitHub main 브랜치에 최신 코드 push
+- Vercel Project Settings > Environment Variables에 아래 값 등록
+  - `DATABASE_URL`
+  - `SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `SUPABASE_STORAGE_BUCKET`
+- Supabase Storage bucket 확인
+- Supabase Postgres migration 적용
+- `npm run lint`, `npm run build` 통과 확인
+
+---
+
+## 15. 향후 확장 아이디어
+
+- Supabase Auth 또는 사내 SSO 기반 로그인 전환
+- 카카오/PlayMCP 연동으로 금액과 장부 사진 자동 등록
+- 장부 사진 OCR로 금액/식당명 자동 추출
+- 월별/팀원별/식당별 리포트와 CSV 다운로드
+- 승인 워크플로우: 팀원 등록 후 관리자 승인 전까지 대기
+- 감사 로그 UI 제공
+- 잔액 부족 알림
+- 모바일 카메라 촬영 최적화

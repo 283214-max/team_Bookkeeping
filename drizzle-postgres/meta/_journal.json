@@ -8,6 +8,13 @@
       "when": 1783395566879,
       "tag": "0000_pink_sunspot",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783931835860,
+      "tag": "0001_loud_morbius",
+      "breakpoints": true
     }
   ]
 }

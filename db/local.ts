@@ -355,6 +355,16 @@ function executeUpdate(sql: string, values: QueryValue[]) {
     return;
   }
 
+  if (sql.startsWith("update users set email")) {
+    const [email, updatedAt, id] = values;
+    updateById("users", id, {
+      email,
+      ...(sql.includes("status = 'inactive'") ? { status: "INACTIVE" } : {}),
+      updated_at: updatedAt,
+    });
+    return;
+  }
+
   if (sql.startsWith("update users set status = 'inactive'")) {
     const [updatedAt, id] = values;
     updateById("users", id, { status: "INACTIVE", updated_at: updatedAt });

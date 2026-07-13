@@ -1159,9 +1159,11 @@ export default function Home() {
                   {zodiacAvatarOptions.map((option) => (
                     <button
                       className={option.id === signupAvatarPreset ? "active" : ""}
+                      disabled={Boolean(signupAvatarFile)}
                       key={option.id}
                       type="button"
                       onClick={() => {
+                        if (signupAvatarFile) return;
                         setSignupAvatarPreset(option.id);
                         handleSignupAvatarChange(null);
                       }}

@@ -531,6 +531,10 @@ function normalizeRestaurantName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function deletedUserEmail(userId: string) {
+  return `${userId}@deleted.local`;
+}
+
 async function first<T>(sql: string, values: SqlValue[] = []) {
   const db = getD1();
   return db
@@ -1262,11 +1266,11 @@ export async function signupUser(input: {
     throw forbidden("승인번호가 올바르지 않습니다.");
   }
 
-  const existing = await first<{ id: string }>(
-    "SELECT id FROM users WHERE LOWER(email) = LOWER(?)",
+  const existing = await first<{ id: string; status: User["status"] }>(
+    "SELECT id, status FROM users WHERE LOWER(email) = LOWER(?)",
     [email],
   );
-  if (existing) {
+  if (existing?.status === "ACTIVE") {
     throw conflict("EMAIL_ALREADY_EXISTS", "이미 가입된 이메일입니다.", {
       field: "email",
     });
@@ -1299,6 +1303,14 @@ export async function signupUser(input: {
 
   try {
     await batch([
+      ...(existing
+        ? [
+            {
+              sql: "UPDATE users SET email = ?, updated_at = ? WHERE id = ?",
+              values: [deletedUserEmail(existing.id), now, existing.id],
+            },
+          ]
+        : []),
       {
         sql: `INSERT INTO users (
           id, email, name, role, status, auth_provider_user_id,
@@ -1978,11 +1990,17 @@ export async function deleteUser(requestUser: User, userId: string) {
   }
 
   const before = await getUserOrThrow(userId);
-  await run("UPDATE users SET status = 'INACTIVE', updated_at = ? WHERE id = ?", [
-    nowText(),
+  const now = nowText();
+  await run("UPDATE users SET email = ?, status = 'INACTIVE', updated_at = ? WHERE id = ?", [
+    deletedUserEmail(userId),
+    now,
     userId,
   ]);
-  const after: User = { ...before, status: "INACTIVE" };
+  const after: User = {
+    ...before,
+    email: deletedUserEmail(userId),
+    status: "INACTIVE",
+  };
 
   await addAuditLog({
     actorUserId: requestUser.id,
