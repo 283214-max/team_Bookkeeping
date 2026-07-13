@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import type {
   ApiErrorBody,
+  AvatarPreset,
   Balance,
   DashboardSummary,
   LedgerTransaction,
@@ -39,8 +40,23 @@ const anonymousUser: User = {
   email: "",
   role: "MEMBER",
   status: "ACTIVE",
-  avatarUrl: "/default-avatar.svg",
+  avatarUrl: "/api/avatars/dragon",
 };
+
+const zodiacAvatarOptions: { id: AvatarPreset; label: string; url: string }[] = [
+  { id: "rat", label: "쥐", url: "/api/avatars/rat" },
+  { id: "ox", label: "소", url: "/api/avatars/ox" },
+  { id: "tiger", label: "호랑이", url: "/api/avatars/tiger" },
+  { id: "rabbit", label: "토끼", url: "/api/avatars/rabbit" },
+  { id: "dragon", label: "용", url: "/api/avatars/dragon" },
+  { id: "snake", label: "뱀", url: "/api/avatars/snake" },
+  { id: "horse", label: "말", url: "/api/avatars/horse" },
+  { id: "goat", label: "양", url: "/api/avatars/goat" },
+  { id: "monkey", label: "원숭이", url: "/api/avatars/monkey" },
+  { id: "rooster", label: "닭", url: "/api/avatars/rooster" },
+  { id: "dog", label: "개", url: "/api/avatars/dog" },
+  { id: "pig", label: "돼지", url: "/api/avatars/pig" },
+];
 
 const navItems: { id: View; label: string; adminOnly?: boolean }[] = [
   { id: "dashboard", label: "대시보드" },
@@ -122,6 +138,8 @@ export default function Home() {
   const [signupEmail, setSignupEmail] = useState("");
   const [signupAvatarFile, setSignupAvatarFile] = useState<File | null>(null);
   const [signupAvatarPreviewUrl, setSignupAvatarPreviewUrl] = useState("");
+  const [signupAvatarPreset, setSignupAvatarPreset] =
+    useState<AvatarPreset>("dragon");
   const [accessToken, setAccessToken] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<User>(anonymousUser);
@@ -148,6 +166,9 @@ export default function Home() {
   const [newRestaurantAmount, setNewRestaurantAmount] = useState("");
 
   const isAdmin = currentUser.role === "ADMIN";
+  const selectedSignupAvatar =
+    zodiacAvatarOptions.find((option) => option.id === signupAvatarPreset) ??
+    zodiacAvatarOptions[4];
 
   const balanceByRestaurant = useMemo(() => {
     return new Map(balances.map((balance) => [balance.restaurantId, balance]));
@@ -336,6 +357,7 @@ export default function Home() {
       const body = new FormData();
       body.append("name", signupName);
       body.append("email", signupEmail);
+      body.append("avatarPreset", signupAvatarPreset);
       if (signupAvatarFile) {
         body.append("avatar", signupAvatarFile);
       }
@@ -352,6 +374,7 @@ export default function Home() {
       setSignupName("");
       setSignupEmail("");
       handleSignupAvatarChange(null);
+      setSignupAvatarPreset("dragon");
       setToast({
         tone: "success",
         message: `${result.user.name}님, 팀 가계부에 오신 것을 환영합니다.`,
@@ -590,6 +613,36 @@ export default function Home() {
     }
   }
 
+  async function deleteUser(user: User) {
+    if (user.id === currentUser.id) {
+      setToast({ tone: "danger", message: "본인 계정은 삭제할 수 없습니다." });
+      return;
+    }
+    const confirmed = window.confirm(
+      `${user.name} 사용자를 삭제할까요?\n삭제된 사용자는 더 이상 로그인할 수 없습니다.`,
+    );
+    if (!confirmed) return;
+
+    setIsLoading(true);
+    try {
+      await apiFetch<{ user: User }>(`/users/${user.id}`, {
+        method: "DELETE",
+      });
+      setUsers((items) => items.filter((item) => item.id !== user.id));
+      setToast({ tone: "success", message: `${user.name} 사용자를 삭제했습니다.` });
+    } catch (error) {
+      setToast({
+        tone: "danger",
+        message:
+          error instanceof Error
+            ? error.message
+            : "사용자 삭제에 실패했습니다.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   async function openReceipt(transaction: LedgerTransaction) {
     if (!transaction.receiptUrl) return;
     try {
@@ -712,7 +765,7 @@ export default function Home() {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     alt=""
-                    src={signupAvatarPreviewUrl || "/default-avatar.svg"}
+                    src={signupAvatarPreviewUrl || selectedSignupAvatar.url}
                   />
                   <label className="file-button">
                     사진 선택
@@ -733,6 +786,23 @@ export default function Home() {
                       기본 사진 사용
                     </button>
                   )}
+                </div>
+                <div className="zodiac-avatar-grid">
+                  {zodiacAvatarOptions.map((option) => (
+                    <button
+                      className={option.id === signupAvatarPreset ? "active" : ""}
+                      key={option.id}
+                      type="button"
+                      onClick={() => {
+                        setSignupAvatarPreset(option.id);
+                        handleSignupAvatarChange(null);
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img alt="" src={option.url} />
+                      <span>{option.label}</span>
+                    </button>
+                  ))}
                 </div>
                 <small>사진을 첨부하지 않으면 기본 프로필 사진이 사용됩니다.</small>
               </div>
@@ -876,8 +946,10 @@ export default function Home() {
         {activeView === "admin" && isAdmin && (
           <AdminView
             balances={balances}
+            currentUser={currentUser}
             restaurants={restaurants}
             transactions={transactions}
+            onDeleteUser={deleteUser}
             users={users}
             onRoleChange={updateUserRole}
           />
@@ -1382,12 +1454,16 @@ function TransactionsView({
 
 function AdminView({
   balances,
+  currentUser,
+  onDeleteUser,
   onRoleChange,
   restaurants,
   transactions,
   users,
 }: {
   balances: Balance[];
+  currentUser: User;
+  onDeleteUser: (user: User) => void;
   onRoleChange: (userId: string, role: Role) => void;
   restaurants: Restaurant[];
   transactions: LedgerTransaction[];
@@ -1486,7 +1562,9 @@ function AdminView({
           </div>
         </div>
         <div className="user-list">
-          {users.map((user) => (
+          {users.map((user) => {
+            const isSelf = user.id === currentUser.id;
+            return (
             <div className="user-row" key={user.id}>
               <div className="user-identity">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1496,7 +1574,8 @@ function AdminView({
                   <small>{user.email}</small>
                 </span>
               </div>
-              <div className="segmented compact">
+              <div className="user-actions">
+                <div className="segmented compact">
                 <button
                   className={user.role === "ADMIN" ? "active" : ""}
                   type="button"
@@ -1512,8 +1591,19 @@ function AdminView({
                   팀원
                 </button>
               </div>
+              <button
+                className="delete-user-button"
+                disabled={isSelf}
+                title={isSelf ? "본인 계정은 삭제할 수 없습니다." : "사용자 삭제"}
+                type="button"
+                onClick={() => onDeleteUser(user)}
+              >
+                삭제
+              </button>
+              </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </section>
     </div>

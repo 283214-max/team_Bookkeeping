@@ -8,6 +8,7 @@ import {
 } from "./errors";
 import type {
   AvatarUpload,
+  AvatarPreset,
   Balance,
   DashboardSummary,
   LedgerTransaction,
@@ -34,6 +35,7 @@ type UserRow = {
   avatarFileName: string | null;
   avatarContentType: string | null;
   avatarSize: number | null;
+  avatarPreset: AvatarPreset | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -106,6 +108,7 @@ const schemaStatements = [
     avatar_file_name TEXT,
     avatar_content_type TEXT,
     avatar_size INTEGER CHECK (avatar_size IS NULL OR avatar_size >= 0),
+    avatar_preset TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
   )`,
@@ -164,7 +167,22 @@ const schemaStatements = [
   "CREATE INDEX IF NOT EXISTS idx_transactions_type_created ON transactions(type, created_at)",
 ];
 
-const DEFAULT_AVATAR_URL = "/default-avatar.svg";
+const DEFAULT_AVATAR_PRESET: AvatarPreset = "dragon";
+const DEFAULT_AVATAR_URL = `/api/avatars/${DEFAULT_AVATAR_PRESET}`;
+const avatarPresets = new Set<AvatarPreset>([
+  "rat",
+  "ox",
+  "tiger",
+  "rabbit",
+  "dragon",
+  "snake",
+  "horse",
+  "goat",
+  "monkey",
+  "rooster",
+  "dog",
+  "pig",
+]);
 
 let ensureDatabasePromise: Promise<void> | null = null;
 
@@ -417,6 +435,16 @@ function todayText() {
   });
 }
 
+function normalizeAvatarPreset(value?: string | null): AvatarPreset {
+  return avatarPresets.has(value as AvatarPreset)
+    ? (value as AvatarPreset)
+    : DEFAULT_AVATAR_PRESET;
+}
+
+function avatarPresetUrl(value?: string | null) {
+  return `/api/avatars/${normalizeAvatarPreset(value)}`;
+}
+
 function toUser(row: UserRow): User {
   return {
     id: row.id,
@@ -424,7 +452,9 @@ function toUser(row: UserRow): User {
     name: row.name,
     role: row.role,
     status: row.status,
-    avatarUrl: row.avatarObjectKey ? `/api/users/${row.id}/avatar` : DEFAULT_AVATAR_URL,
+    avatarUrl: row.avatarObjectKey
+      ? `/api/users/${row.id}/avatar`
+      : avatarPresetUrl(row.avatarPreset),
   };
 }
 
@@ -567,6 +597,10 @@ async function ensureUserAvatarColumns() {
     {
       name: "avatar_size",
       sql: "ALTER TABLE users ADD COLUMN avatar_size INTEGER",
+    },
+    {
+      name: "avatar_preset",
+      sql: "ALTER TABLE users ADD COLUMN avatar_preset TEXT",
     },
   ].filter((statement) => !columnNames.has(statement.name));
 
@@ -781,6 +815,12 @@ async function uploadAvatar(userId: string, avatar: AvatarUpload) {
   };
 }
 
+function isMissingStorageBucketError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return message.includes("bucket not found") || message.includes("bucket_not_found");
+}
+
 async function getUserOrThrow(userId: string) {
   await ensureDatabase();
   const row = await first<UserRow>(
@@ -791,6 +831,7 @@ async function getUserOrThrow(userId: string) {
       avatar_file_name as avatarFileName,
       avatar_content_type as avatarContentType,
       avatar_size as avatarSize,
+      avatar_preset as avatarPreset,
       created_at as createdAt,
       updated_at as updatedAt
     FROM users
@@ -1113,6 +1154,7 @@ export async function loginUser(input: { email?: string; role?: Role }) {
       avatar_file_name as avatarFileName,
       avatar_content_type as avatarContentType,
       avatar_size as avatarSize,
+      avatar_preset as avatarPreset,
       created_at as createdAt,
       updated_at as updatedAt
     FROM users
@@ -1137,6 +1179,7 @@ export async function signupUser(input: {
   name?: string;
   email?: string;
   avatar?: AvatarUpload | null;
+  avatarPreset?: string | null;
 }) {
   await ensureDatabase();
 
@@ -1161,15 +1204,25 @@ export async function signupUser(input: {
   }
 
   const now = nowText();
+  const avatarPreset = normalizeAvatarPreset(input.avatarPreset);
   const user: User = {
     id: createId("u"),
     name,
     email,
     role: "MEMBER",
     status: "ACTIVE",
-    avatarUrl: DEFAULT_AVATAR_URL,
+    avatarUrl: avatarPresetUrl(avatarPreset),
   };
-  const avatarMetadata = input.avatar ? await uploadAvatar(user.id, input.avatar) : null;
+  let avatarMetadata: Awaited<ReturnType<typeof uploadAvatar>> | null = null;
+  if (input.avatar) {
+    try {
+      avatarMetadata = await uploadAvatar(user.id, input.avatar);
+    } catch (error) {
+      if (!isMissingStorageBucketError(error)) {
+        throw error;
+      }
+    }
+  }
 
   if (avatarMetadata) {
     user.avatarUrl = `/api/users/${user.id}/avatar`;
@@ -1181,8 +1234,9 @@ export async function signupUser(input: {
         sql: `INSERT INTO users (
           id, email, name, role, status, auth_provider_user_id,
           avatar_object_key, avatar_file_name, avatar_content_type, avatar_size,
+          avatar_preset,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
         values: [
           user.id,
           user.email,
@@ -1193,6 +1247,7 @@ export async function signupUser(input: {
           avatarMetadata?.avatarFileName ?? null,
           avatarMetadata?.avatarContentType ?? null,
           avatarMetadata?.avatarSize ?? null,
+          avatarPreset,
           now,
           now,
         ],
@@ -1207,7 +1262,11 @@ export async function signupUser(input: {
           "USER_SIGNUP",
           "users",
           user.id,
-          JSON.stringify({ email: user.email, hasAvatar: Boolean(avatarMetadata) }),
+          JSON.stringify({
+            email: user.email,
+            hasAvatar: Boolean(avatarMetadata),
+            avatarPreset,
+          }),
           now,
         ],
       },
@@ -1626,6 +1685,7 @@ export async function getUserAvatar(userId: string) {
       avatar_file_name as avatarFileName,
       avatar_content_type as avatarContentType,
       avatar_size as avatarSize,
+      avatar_preset as avatarPreset,
       created_at as createdAt,
       updated_at as updatedAt
     FROM users
@@ -1743,9 +1803,11 @@ export async function listUsers(requestUser: User) {
       avatar_file_name as avatarFileName,
       avatar_content_type as avatarContentType,
       avatar_size as avatarSize,
+      avatar_preset as avatarPreset,
       created_at as createdAt,
       updated_at as updatedAt
     FROM users
+    WHERE status = 'ACTIVE'
     ORDER BY created_at ASC`,
   );
   const items = rows.map(toUser);
@@ -1769,6 +1831,30 @@ export async function updateUserRole(requestUser: User, userId: string, role: Ro
   await addAuditLog({
     actorUserId: requestUser.id,
     action: "USER_ROLE_UPDATE",
+    targetType: "users",
+    targetId: userId,
+    metadata: { before, after },
+  });
+
+  return { user: after };
+}
+
+export async function deleteUser(requestUser: User, userId: string) {
+  ensureAdmin(requestUser);
+  if (requestUser.id === userId) {
+    throw forbidden("본인 계정은 삭제할 수 없습니다.");
+  }
+
+  const before = await getUserOrThrow(userId);
+  await run("UPDATE users SET status = 'INACTIVE', updated_at = ? WHERE id = ?", [
+    nowText(),
+    userId,
+  ]);
+  const after: User = { ...before, status: "INACTIVE" };
+
+  await addAuditLog({
+    actorUserId: requestUser.id,
+    action: "USER_DELETE",
     targetType: "users",
     targetId: userId,
     metadata: { before, after },

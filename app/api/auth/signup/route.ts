@@ -25,15 +25,21 @@ export async function POST(request: Request) {
         name: String(form.get("name") ?? ""),
         email: String(form.get("email") ?? ""),
         avatar: avatar instanceof File ? await fileToAvatarUpload(avatar) : null,
+        avatarPreset: String(form.get("avatarPreset") ?? ""),
       });
 
       return Response.json(result, { status: 201 });
     }
 
-    const body = await readJson<{ name?: string; email?: string }>(request);
+    const body = await readJson<{
+      name?: string;
+      email?: string;
+      avatarPreset?: string | null;
+    }>(request);
     const result = await signupUser({
       name: body.name,
       email: body.email,
+      avatarPreset: body.avatarPreset,
     });
 
     return Response.json(result, { status: 201 });

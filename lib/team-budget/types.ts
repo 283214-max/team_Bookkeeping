@@ -1,5 +1,18 @@
 export type Role = "ADMIN" | "MEMBER";
 export type UserStatus = "ACTIVE" | "INACTIVE";
+export type AvatarPreset =
+  | "rat"
+  | "ox"
+  | "tiger"
+  | "rabbit"
+  | "dragon"
+  | "snake"
+  | "horse"
+  | "goat"
+  | "monkey"
+  | "rooster"
+  | "dog"
+  | "pig";
 export type RestaurantStatus = "ACTIVE" | "INACTIVE";
 export type TransactionType = "SPEND" | "TOP_UP" | "ADJUST" | "REVERSAL";
 

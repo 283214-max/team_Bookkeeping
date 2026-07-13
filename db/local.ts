@@ -38,6 +38,7 @@ const tableColumns: Record<TableName, string[]> = {
     "avatar_file_name",
     "avatar_content_type",
     "avatar_size",
+    "avatar_preset",
     "created_at",
     "updated_at",
   ],
@@ -348,6 +349,12 @@ function executeUpdate(sql: string, values: QueryValue[]) {
     return;
   }
 
+  if (sql.startsWith("update users set status = 'inactive'")) {
+    const [updatedAt, id] = values;
+    updateById("users", id, { status: "INACTIVE", updated_at: updatedAt });
+    return;
+  }
+
   throw new Error(`Unsupported local UPDATE: ${sql}`);
 }
 
@@ -388,6 +395,8 @@ function selectUsers(sql: string, values: QueryValue[]) {
   let rows = [...getLocalData().tables.users];
   if (sql.includes("where id = ?")) {
     rows = rows.filter((row) => row.id === values[0]);
+  } else if (sql.includes("where status = 'active'")) {
+    rows = rows.filter((row) => row.status === "ACTIVE");
   } else if (sql.includes("where email = ?")) {
     rows = rows.filter((row) => row.email === values[0]);
   } else if (sql.includes("where role = ?")) {
@@ -540,6 +549,7 @@ function toUserResult(row: LocalRow) {
     avatarFileName: row.avatar_file_name,
     avatarContentType: row.avatar_content_type,
     avatarSize: row.avatar_size,
+    avatarPreset: row.avatar_preset,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
