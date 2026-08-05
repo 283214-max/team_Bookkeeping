@@ -1757,7 +1757,7 @@ function RestaurantsView({
                 <button type="button" onClick={onCopyTransferAccount}>
                   {transferAccountNumber}
                 </button>
-                <strong>양승봉</strong>
+                <strong>양승봉 계좌로 80% 금액 송금해주세요</strong>
               </div>
             )}
           </form>
